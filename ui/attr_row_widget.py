@@ -122,13 +122,13 @@ class RangeDialog(QDialog):
         buttons = QHBoxLayout(button_bar)
         buttons.setContentsMargins(2, 2, 2, 2)
         buttons.setSpacing(4)
-        cancel = QPushButton("Cancel")
-        cancel.clicked.connect(self.reject)
-        apply = QPushButton("Set Range")
+        apply = QPushButton("OK")
         apply.setDefault(True)
         apply.clicked.connect(self.accept)
-        buttons.addWidget(cancel, 1)
+        cancel = QPushButton("Cancel")
+        cancel.clicked.connect(self.reject)
         buttons.addWidget(apply, 1)
+        buttons.addWidget(cancel, 1)
         root.addWidget(button_bar)
 
     def get_values(self):
