@@ -5,13 +5,13 @@ from __future__ import annotations
 import json
 
 try:
-    from PySide6.QtCore import Qt, Signal, QMimeData, QTimer
-    from PySide6.QtGui import QPainter, QPen, QColor, QDrag
+    from PySide6.QtCore import Qt, QPoint, Signal, QMimeData, QTimer
+    from PySide6.QtGui import QPainter, QPen, QColor, QDrag, QPolygon
     from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel, QLineEdit,
                                    QPushButton, QVBoxLayout, QWidget)
 except ImportError:
-    from PySide2.QtCore import Qt, Signal, QMimeData, QTimer
-    from PySide2.QtGui import QPainter, QPen, QColor, QDrag
+    from PySide2.QtCore import Qt, QPoint, Signal, QMimeData, QTimer
+    from PySide2.QtGui import QPainter, QPen, QColor, QDrag, QPolygon
     from PySide2.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel, QLineEdit,
                                    QPushButton, QVBoxLayout, QWidget)
 
@@ -26,11 +26,27 @@ class GroupDragHandle(QLabel):
         super().__init__()
         self.section = section
         self._start = None
+        self._expanded = True
         self.setObjectName("groupArrow")
         self.setFixedSize(20, 20)
         self.setAlignment(Qt.AlignCenter)
-        self.setCursor(Qt.OpenHandCursor)
         self.setToolTip("Click to collapse, drag to reorder group")
+
+    def set_expanded(self, expanded):
+        self._expanded = expanded
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing, False)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor("#eeeeee"))
+        if self._expanded:
+            points = [QPoint(4, 7), QPoint(16, 7), QPoint(10, 13)]
+        else:
+            points = [QPoint(7, 4), QPoint(7, 16), QPoint(13, 10)]
+        painter.drawPolygon(QPolygon(points))
+        painter.end()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -58,10 +74,6 @@ class GroupDragHandle(QLabel):
             self._start = None
             self.section._toggle()
 
-    def setText(self, text):
-        super().setText(text)
-
-
 class EntryContainer(QWidget):
     def __init__(self, section):
         super().__init__(section)
@@ -71,6 +83,7 @@ class EntryContainer(QWidget):
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.setSpacing(1)
         self._indicator_y = None
+        self._placeholder = None
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasFormat(MIME_TYPE):
@@ -104,24 +117,33 @@ class EntryContainer(QWidget):
         self.section.request_move(data["group_index"], data["entry_index"], target)
         event.acceptProposedAction()
 
+    def _entry_widgets(self):
+        return [self._layout.itemAt(i).widget() for i in range(self._layout.count())
+                if self._layout.itemAt(i).widget() is not None and self._layout.itemAt(i).widget() is not self._placeholder]
+
+    def _ensure_placeholder(self):
+        if self._placeholder is None:
+            self._placeholder = QLabel("No attributes - drag entries here")
+            self._placeholder.setObjectName("dropPlaceholder")
+            self._placeholder.setAlignment(Qt.AlignCenter)
+            self._layout.addWidget(self._placeholder)
+        self._placeholder.setVisible(not bool(self.section.rows))
+
     def _calc_drop_index(self, y):
-        for index in range(self._layout.count()):
-            child = self._layout.itemAt(index).widget()
-            if child and y < child.geometry().center().y():
+        widgets = self._entry_widgets()
+        for index, child in enumerate(widgets):
+            if y < child.geometry().center().y():
                 return index
-        return self._layout.count()
+        return len(widgets)
 
     def _calc_indicator_y(self, y):
-        for index in range(self._layout.count()):
-            child = self._layout.itemAt(index).widget()
-            if not child:
-                continue
+        widgets = self._entry_widgets()
+        for child in widgets:
             geo = child.geometry()
             if y < geo.center().y():
                 return geo.top()
-        last = self._layout.itemAt(self._layout.count() - 1)
-        if last and last.widget():
-            return last.widget().geometry().bottom() + 1
+        if widgets:
+            return widgets[-1].geometry().bottom() + 1
         return 0
 
     def paintEvent(self, event):
@@ -129,9 +151,44 @@ class EntryContainer(QWidget):
         if self._indicator_y is None:
             return
         painter = QPainter(self)
-        painter.setPen(QPen(QColor(80, 160, 255), 2))
+        painter.setPen(QPen(QColor(82, 133, 166), 2))
         painter.drawLine(4, self._indicator_y, self.width() - 4, self._indicator_y)
         painter.end()
+
+
+class GroupTitleLabel(QLabel):
+    def __init__(self, section):
+        super().__init__(section.group.name)
+        self.section = section
+        self._start = None
+        self.setObjectName("groupTitle")
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._start = event.position().toPoint() if hasattr(event, "position") else event.pos()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if self._start is None:
+            return
+        current = event.position().toPoint() if hasattr(event, "position") else event.pos()
+        if (current - self._start).manhattanLength() < 8:
+            return
+        self._start = None
+        index = self.section.group_index()
+        if index < 0:
+            return
+        mime = QMimeData()
+        mime.setData(GROUP_MIME_TYPE, json.dumps({"group_index": index}).encode("utf-8"))
+        drag = QDrag(self)
+        drag.setMimeData(mime)
+        drag.exec(Qt.MoveAction) if hasattr(drag, "exec") else drag.exec_(Qt.MoveAction)
+
+    def mouseReleaseEvent(self, event):
+        self._start = None
+
+    def mouseDoubleClickEvent(self, event):
+        self.section._begin_rename(event)
 
 
 class GroupSection(QWidget):
@@ -148,14 +205,17 @@ class GroupSection(QWidget):
 
     def _build(self):
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(3, 3, 3, 3)
-        outer.setSpacing(1)
-        header = QHBoxLayout()
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        self.setFocusPolicy(Qt.ClickFocus)
+        header_widget = QWidget()
+        header_widget.setObjectName("groupHeader")
+        header = QHBoxLayout(header_widget)
+        header.setContentsMargins(2, 1, 2, 1)
+        header.setSpacing(2)
         self.arrow = GroupDragHandle(self)
         header.addWidget(self.arrow)
-        self.title = QLabel(self.group.name)
-        self.title.setObjectName("groupTitle")
-        self.title.mouseDoubleClickEvent = self._begin_rename
+        self.title = GroupTitleLabel(self)
         header.addWidget(self.title)
         self.edit = QLineEdit(self.group.name)
         self.edit.hide()
@@ -168,10 +228,7 @@ class GroupSection(QWidget):
         remove.setToolTip("Remove group")
         remove.clicked.connect(lambda: self.remove_requested.emit(self))
         header.addWidget(remove)
-        outer.addLayout(header)
-        line = QFrame()
-        line.setFrameShape(QFrame.HLine)
-        outer.addWidget(line)
+        outer.addWidget(header_widget)
         self.container = EntryContainer(self)
         outer.addWidget(self.container)
         self.populate(float_precision=self._float_precision)
@@ -193,8 +250,9 @@ class GroupSection(QWidget):
 
     def populate(self, float_precision=False):
         while self.container._layout.count():
-            child = self.container._layout.takeAt(0).widget()
-            if child:
+            item = self.container._layout.takeAt(0)
+            child = item.widget()
+            if child and child is not self.container._placeholder:
                 child.deleteLater()
         self.rows = []
         for entry in self.group.entries:
@@ -203,6 +261,7 @@ class GroupSection(QWidget):
             row.changed.connect(self.changed)
             self.container._layout.addWidget(row)
             self.rows.append(row)
+        self.container._ensure_placeholder()
 
     def _remove_entry(self, row):
         index = self.rows.index(row)
@@ -219,7 +278,7 @@ class GroupSection(QWidget):
         self.changed.emit()
 
     def _apply_collapsed(self):
-        self.arrow.setText("▾" if not self.group.collapsed else "▸")
+        self.arrow.set_expanded(not self.group.collapsed)
         self.container.setVisible(not self.group.collapsed)
 
     def _begin_rename(self, _event):
@@ -244,8 +303,11 @@ class GroupSection(QWidget):
             self.group.name = name
             self.title.setText(name)
             self.changed.emit()
+        keep_focus = self.edit.hasFocus()
         self.edit.hide()
         self.title.show()
+        if keep_focus:
+            self.setFocus(Qt.OtherFocusReason)
 
     def refresh_all_values(self):
         for row in self.rows:

@@ -36,7 +36,9 @@ except ImportError:
         pass
 
 
-WINDOW_OBJECT_NAME = "attributeManagerMainWindow"
+WINDOW_OBJECT_NAME = "attributeManagerMayaMainWindow"
+
+_active_jobs = []
 
 
 class GroupContainer(QWidget):
@@ -106,7 +108,7 @@ class GroupContainer(QWidget):
         if self._indicator_y is None:
             return
         painter = QPainter(self)
-        painter.setPen(QPen(QColor(255, 160, 50), 3))
+        painter.setPen(QPen(QColor(82, 133, 166), 3))
         painter.drawLine(4, self._indicator_y, self.width() - 4, self._indicator_y)
         painter.end()
 
@@ -137,12 +139,18 @@ class AttrManagerWindow(MayaQWidgetDockableMixin, QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
-        layout.setContentsMargins(5, 5, 5, 5)
-        toolbar = QHBoxLayout()
-        add = QPushButton("+ Add Attribute")
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        toolbar_widget = QWidget()
+        toolbar_widget.setObjectName("attributeToolbar")
+        toolbar = QHBoxLayout(toolbar_widget)
+        toolbar.setContentsMargins(4, 4, 4, 4)
+        toolbar.setSpacing(3)
+        add = QPushButton("Add")
+        add.setToolTip("Add attributes from the Channel Box or a plug")
         add.clicked.connect(self.add_attributes)
         toolbar.addWidget(add)
-        new_group = QPushButton("+ New Group")
+        new_group = QPushButton("New Group")
         new_group.clicked.connect(self.add_group)
         toolbar.addWidget(new_group)
         refresh = QPushButton("Refresh")
@@ -160,22 +168,43 @@ class AttrManagerWindow(MayaQWidgetDockableMixin, QMainWindow):
         renderer.addWidget(self.float_btn)
         toolbar.addStretch()
         toolbar.addLayout(renderer)
-        layout.addLayout(toolbar)
+        layout.addWidget(toolbar_widget)
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.content = GroupContainer(self)
         self.content_layout = QVBoxLayout(self.content)
-        self.content_layout.setContentsMargins(1, 1, 1, 1)
+        self.content_layout.setContentsMargins(3, 3, 3, 3)
+        self.content_layout.setSpacing(3)
         self.content_layout.addStretch()
         self.scroll.setWidget(self.content)
         layout.addWidget(self.scroll)
 
     def _create_jobs(self):
         self.script_jobs.append(cmds.scriptJob(event=["SceneOpened", self._deferred_load], protected=True))
+        self.script_jobs.append(cmds.scriptJob(event=["Undo", self._deferred_refresh], protected=True))
+        self.script_jobs.append(cmds.scriptJob(event=["Redo", self._deferred_refresh], protected=True))
+        global _active_jobs
+        _active_jobs = list(self.script_jobs)
 
     def _deferred_load(self):
-        m_utils.executeDeferred(self.load_scene_config, lowPriority=True)
+        m_utils.executeDeferred(self._load_guard, lowPriority=True)
+
+    def _load_guard(self, *args, **kwargs):
+        self.load_scene_config()
+
+    def _deferred_refresh(self):
+        m_utils.executeDeferred(self._refresh_guard, lowPriority=True)
+
+    def _refresh_guard(self, *args, **kwargs):
+        self.refresh_all_values()
+
+    def refresh_all_values(self):
+        for section in self.sections:
+            try:
+                section.refresh_all_values()
+            except Exception as exc:
+                cmds.warning("Attribute Manager: refresh failed: {}".format(exc))
 
     def load_scene_config(self):
         self.config = load_config()
@@ -311,6 +340,8 @@ class AttrManagerWindow(MayaQWidgetDockableMixin, QMainWindow):
             except Exception:
                 pass
         self.script_jobs = []
+        global _active_jobs
+        _active_jobs = []
         global _window
         _window = None
         super().closeEvent(event)
@@ -319,20 +350,39 @@ class AttrManagerWindow(MayaQWidgetDockableMixin, QMainWindow):
 _window = None
 
 
+def _kill_stale_jobs():
+    global _active_jobs
+    for job in _active_jobs:
+        try:
+            if cmds.scriptJob(exists=job):
+                cmds.scriptJob(kill=job, force=True)
+        except Exception:
+            pass
+    _active_jobs = []
+    try:
+        jobs = cmds.scriptJob(listJobs=True) or []
+    except Exception:
+        return
+    tokens = (WINDOW_OBJECT_NAME, AttrManagerWindow.__name__, "_deferred_load", "_deferred_refresh")
+    for job in jobs:
+        if not any(tok in job for tok in tokens):
+            continue
+        try:
+            job_id = int(job.split(":", 1)[0].strip())
+            cmds.scriptJob(kill=job_id, force=True)
+        except Exception:
+            pass
+
+
 def launch(dockable=True):
     global _window
+    _kill_stale_jobs()
     workspace = WINDOW_OBJECT_NAME + "WorkspaceControl"
     if cmds.workspaceControl(workspace, exists=True):
         cmds.workspaceControl(workspace, edit=True, close=True)
         cmds.deleteUI(workspace, control=True)
     for widget in QApplication.topLevelWidgets():
         if widget.objectName() == WINDOW_OBJECT_NAME:
-            for job in getattr(widget, "script_jobs", []):
-                try:
-                    if cmds.scriptJob(exists=job):
-                        cmds.scriptJob(kill=job, force=True)
-                except Exception:
-                    pass
             widget.close()
             widget.deleteLater()
     _window = AttrManagerWindow()

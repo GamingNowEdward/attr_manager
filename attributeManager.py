@@ -1,4 +1,4 @@
-"""Attribute Manager entry point.  Run ``attributeManager.launch()`` in Maya."""
+"""Maya-styled Attribute Manager entry point."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ def reload_modules():
     """Reload the package during Maya tool development."""
     names = [
         "core.attr_data", "core.scene_io", "core.channel_box",
-        "ui.attr_row_widget", "ui.group_section", "ui.add_attr_dialog", "ui.main_window",
+        "ui.styles", "ui.attr_row_widget", "ui.group_section", "ui.add_attr_dialog", "ui.main_window",
     ]
     for name in names:
         module = importlib.import_module(name)

@@ -13,14 +13,16 @@ try:
     from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog,
                                    QDialogButtonBox, QDoubleSpinBox, QFormLayout,
                                    QHBoxLayout, QLabel, QLineEdit, QMenu, QPushButton,
-                                   QSlider, QSpinBox, QWidget)
+                                   QSlider, QSpinBox, QVBoxLayout, QWidget)
+    from shiboken6 import isValid
 except ImportError:  # Maya 2024 normally uses PySide6; retain older compatibility.
     from PySide2.QtCore import Qt, Signal, QMimeData, QTimer
     from PySide2.QtGui import QDrag
     from PySide2.QtWidgets import (QApplication, QAction, QCheckBox, QComboBox, QDialog,
                                    QDialogButtonBox, QDoubleSpinBox, QFormLayout,
                                    QHBoxLayout, QLabel, QLineEdit, QMenu, QPushButton,
-                                   QSlider, QSpinBox, QWidget)
+                                   QSlider, QSpinBox, QVBoxLayout, QWidget)
+    from shiboken2 import isValid
 
 from core.attr_data import AttrEntry
 
@@ -76,22 +78,58 @@ class RangeDialog(QDialog):
     def __init__(self, current_min, current_max, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Set Slider Range")
-        self.setMinimumWidth(280)
-        form = QFormLayout(self)
+        self.setObjectName("sliderRangeDialog")
+        self.setMinimumWidth(340)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(5, 5, 5, 5)
+        root.setSpacing(5)
+
+        title = QLabel("Slider Range")
+        title.setObjectName("dialogSectionHeader")
+        root.addWidget(title)
+
+        content = QWidget()
+        content.setObjectName("rangeContent")
+        form = QVBoxLayout(content)
+        form.setContentsMargins(8, 7, 8, 7)
+        form.setSpacing(5)
+
+        min_row = QHBoxLayout()
+        min_label = QLabel("Minimum")
+        min_label.setMinimumWidth(100)
+        min_row.addWidget(min_label)
         self.min_spin = QDoubleSpinBox()
         self.min_spin.setRange(-1000000.0, 1000000.0)
         self.min_spin.setDecimals(4)
         self.min_spin.setValue(current_min)
-        form.addRow("Min:", self.min_spin)
+        min_row.addWidget(self.min_spin, 1)
+        form.addLayout(min_row)
+
+        max_row = QHBoxLayout()
+        max_label = QLabel("Maximum")
+        max_label.setMinimumWidth(100)
+        max_row.addWidget(max_label)
         self.max_spin = QDoubleSpinBox()
         self.max_spin.setRange(-1000000.0, 1000000.0)
         self.max_spin.setDecimals(4)
         self.max_spin.setValue(current_max)
-        form.addRow("Max:", self.max_spin)
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        form.addRow(buttons)
+        max_row.addWidget(self.max_spin, 1)
+        form.addLayout(max_row)
+        root.addWidget(content)
+
+        button_bar = QWidget()
+        button_bar.setObjectName("dialogButtonBar")
+        buttons = QHBoxLayout(button_bar)
+        buttons.setContentsMargins(2, 2, 2, 2)
+        buttons.setSpacing(4)
+        cancel = QPushButton("Cancel")
+        cancel.clicked.connect(self.reject)
+        apply = QPushButton("Set Range")
+        apply.setDefault(True)
+        apply.clicked.connect(self.accept)
+        buttons.addWidget(cancel, 1)
+        buttons.addWidget(apply, 1)
+        root.addWidget(button_bar)
 
     def get_values(self):
         return self.min_spin.value(), self.max_spin.value()
@@ -120,7 +158,6 @@ class DragHandle(QLabel):
         self.setObjectName("dragHandle")
         self.setFixedSize(20, 20)
         self.setAlignment(Qt.AlignCenter)
-        self.setCursor(Qt.OpenHandCursor)
         self.setToolTip("Drag to reorder or move to another group")
 
     def mousePressEvent(self, event):
@@ -159,9 +196,11 @@ class AttrRowWidget(QWidget):
         self._build()
 
     def _build(self):
+        self.setObjectName("attributeRow")
+        self.setFocusPolicy(Qt.ClickFocus)
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(3, 2, 3, 2)
-        layout.setSpacing(5)
+        layout.setContentsMargins(2, 1, 2, 1)
+        layout.setSpacing(4)
         layout.addWidget(DragHandle(self))
 
         self.name_label = QLabel(self.entry.display_name)
@@ -488,8 +527,11 @@ class AttrRowWidget(QWidget):
             self.entry.display_name = name
             self.name_label.setText(name)
             self.changed.emit()
+        keep_focus = self.name_edit.hasFocus()
         self.name_edit.hide()
         self.name_label.show()
+        if keep_focus:
+            self.setFocus(Qt.OtherFocusReason)
 
     def refresh_value(self):
         node = self._resolve_node()
@@ -497,11 +539,13 @@ class AttrRowWidget(QWidget):
             return
         precision = self._get_slider_precision()
         for widget in self._value_widgets:
-            plug = widget.property("attrManagerPlug")
-            if not plug:
+            if not isValid(widget):
                 continue
-            widget.blockSignals(True)
             try:
+                plug = widget.property("attrManagerPlug")
+                if not plug:
+                    continue
+                widget.blockSignals(True)
                 if isinstance(widget, QCheckBox):
                     widget.setChecked(bool(cmds.getAttr(plug)))
                 elif isinstance(widget, QComboBox):
@@ -514,4 +558,7 @@ class AttrRowWidget(QWidget):
             except Exception:
                 pass
             finally:
-                widget.blockSignals(False)
+                try:
+                    widget.blockSignals(False)
+                except Exception:
+                    pass

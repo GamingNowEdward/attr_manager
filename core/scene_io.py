@@ -69,17 +69,21 @@ def save_config(config: Config) -> bool:
     if existing and _referenced(existing[0]):
         cmds.warning("Attribute Manager: configuration node is referenced and cannot be saved.")
         return False
-    node = get_or_create_node()
-    plug = "{}.{}".format(node, ATTR_NAME)
-    was_locked = cmds.getAttr(plug, lock=True)
-    node_was_locked = _node_locked(node)
     undo_enabled = cmds.undoInfo(query=True, state=True)
+    cmds.undoInfo(stateWithoutFlush=False)
+    node = None
+    plug = None
+    was_locked = False
+    node_was_locked = False
     try:
+        node = get_or_create_node()
+        plug = "{}.{}".format(node, ATTR_NAME)
+        was_locked = cmds.getAttr(plug, lock=True)
+        node_was_locked = _node_locked(node)
         if node_was_locked:
             cmds.lockNode(node, lock=False)
         if was_locked:
             cmds.setAttr(plug, lock=False)
-        cmds.undoInfo(stateWithoutFlush=False)
         cmds.setAttr(plug, config.to_json(), type="string")
         return True
     except Exception as exc:
@@ -87,12 +91,13 @@ def save_config(config: Config) -> bool:
         return False
     finally:
         try:
-            cmds.undoInfo(stateWithoutFlush=undo_enabled)
-            if was_locked:
-                cmds.setAttr(plug, lock=True)
-            cmds.lockNode(node, lock=True)
+            if node is not None:
+                if was_locked:
+                    cmds.setAttr(plug, lock=True)
+                cmds.lockNode(node, lock=True)
         except Exception:
             pass
+        cmds.undoInfo(stateWithoutFlush=undo_enabled)
 
 
 def load_config() -> Config:

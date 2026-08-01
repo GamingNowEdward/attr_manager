@@ -11,7 +11,9 @@ A dockable attribute collection panel for Maya 2024/2025. Aggregates frequently 
 - Custom slider range: right-click the slider → Set Min/Max/Range/Reset (default range wraps the current value)
 - Global Int/Float Snap toggle: integer steps vs float steps (3 decimal places)
 - Group management: collapse, rename (double-click), drag reorder
-- Entry management: drag reorder, cross-group drag, double-click rename
+- Entry management: drag reorder, cross-group drag, double-click rename; empty groups show a placeholder and remain a valid drop target
+- Full undo support: attribute edits (including slider drags) are undoable; config saves never pollute the undo stack
+- Undo/redo sync: panel values auto-refresh after Ctrl+Z / Ctrl+Shift+Z
 - Config persistence: stored on a locked `attrManager` network node in the scene
 - UUID-based node resolution survives renames and reparenting
 - Performance: 300ms debounced config saves; slider drags collapse into a single undo step
