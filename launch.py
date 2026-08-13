@@ -1,7 +1,7 @@
 """Portable launcher for Attribute Manager.
 
 Usage in Maya Script Editor:
-    exec(open(r"C:\opencode\attributeManager_maya\launch.py").read())
+    exec(compile(open(r"C:\opencode\attributeManager_maya\launch.py").read(), r"C:\opencode\attributeManager_maya\launch.py", "exec"))
 """
 from __future__ import annotations
 

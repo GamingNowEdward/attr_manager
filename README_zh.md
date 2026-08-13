@@ -23,7 +23,7 @@ Maya 2024/2025 属性集合面板工具。将场景中常用属性聚合到一�
 在 Maya Script Editor 中执行：
 
 ```python
-exec(open(r"C:\opencode\attributeManager_maya\launch.py").read())
+exec(compile(open(r"C:\opencode\attributeManager_maya\launch.py").read(), r"C:\opencode\attributeManager_maya\launch.py", "exec"))
 ```
 
 面板会停靠到 Maya 右侧。每次调用会自动热重载所有模块，方便开发迭代。
