@@ -12,14 +12,14 @@ try:
     from PySide6.QtWidgets import (QApplication, QHBoxLayout, QInputDialog,
                                    QMainWindow, QMessageBox, QPushButton,
                                    QScrollArea, QVBoxLayout, QWidget)
-    from shiboken6 import wrapInstance
+    from shiboken6 import isValid, wrapInstance
 except ImportError:
     from PySide2.QtCore import Qt, QTimer
     from PySide2.QtGui import QPainter, QPen, QColor
     from PySide2.QtWidgets import (QApplication, QHBoxLayout, QInputDialog,
                                    QMainWindow, QMessageBox, QPushButton,
                                    QScrollArea, QVBoxLayout, QWidget)
-    from shiboken2 import wrapInstance
+    from shiboken2 import isValid, wrapInstance
 
 from core.attr_data import AttrGroup, Config, resolve_entries
 from core.scene_io import load_config, save_config
@@ -127,10 +127,11 @@ class AttrManagerWindow(MayaQWidgetDockableMixin, QMainWindow):
         self.config = Config()
         self.sections = []
         self.script_jobs = []
+        self._slider_chunks = set()
         self._save_timer = QTimer(self)
         self._save_timer.setSingleShot(True)
         self._save_timer.setInterval(300)
-        self._save_timer.timeout.connect(self._do_save)
+        self._save_timer.timeout.connect(self._save_timeout)
         self._build()
         self._create_jobs()
         self.load_scene_config()
@@ -207,26 +208,43 @@ class AttrManagerWindow(MayaQWidgetDockableMixin, QMainWindow):
                 cmds.warning("Attribute Manager: refresh failed: {}".format(exc))
 
     def load_scene_config(self):
-        merged_config = load_config()
+        self._apply_merged(load_config())
+
+    def _apply_merged(self, merged_config):
         self.config = merged_config
         self._main_groups = [g for g in merged_config.groups if g.reference_namespace is None]
         self._ref_groups = [g for g in merged_config.groups if g.reference_namespace is not None]
 
-        main_keys = set()
+        main_entries = {}
         for group in self._main_groups:
             for entry in group.entries:
-                main_keys.add((entry.node_uuid or entry.node_path, entry.attr))
+                key = (entry.node_uuid or entry.node_path, entry.attr)
+                main_entries.setdefault(key, []).append(entry)
 
-        visible_groups = list(self._main_groups)
+        merged_ref_groups = []
+        shown_main_keys = set()
         for ref_group in self._ref_groups:
-            visible_entries = []
+            merged_entries = []
             for entry in ref_group.entries:
                 key = (entry.node_uuid or entry.node_path, entry.attr)
-                if key not in main_keys:
-                    visible_entries.append(entry)
-            if visible_entries:
-                ref_group.entries = visible_entries
-                visible_groups.append(ref_group)
+                if key in main_entries:
+                    merged_entries.append(main_entries[key][0])
+                    shown_main_keys.add(key)
+                else:
+                    merged_entries.append(entry)
+            if merged_entries:
+                ref_group.entries = merged_entries
+                merged_ref_groups.append(ref_group)
+
+        visible_groups = []
+        for group in self._main_groups:
+            remaining = [e for e in group.entries
+                         if (e.node_uuid or e.node_path, e.attr) not in shown_main_keys]
+            if group.entries and not remaining:
+                continue
+            group.entries = remaining
+            visible_groups.append(group)
+        visible_groups.extend(merged_ref_groups)
 
         self.config.groups = visible_groups
         self._update_snap_buttons()
@@ -244,6 +262,12 @@ class AttrManagerWindow(MayaQWidgetDockableMixin, QMainWindow):
         self.save()
 
     def rebuild(self):
+        for row in list(self._slider_chunks):
+            try:
+                cmds.undoInfo(closeChunk=True)
+            except Exception:
+                pass
+        self._slider_chunks.clear()
         self.sections = []
         while self.content_layout.count() > 1:
             item = self.content_layout.takeAt(0)
@@ -273,7 +297,7 @@ class AttrManagerWindow(MayaQWidgetDockableMixin, QMainWindow):
         self.save()
 
     def add_attributes(self):
-        if not self.config.groups:
+        if not any(g.reference_namespace is None for g in self.config.groups):
             self.add_group()
             if not self.config.groups:
                 return
@@ -306,6 +330,13 @@ class AttrManagerWindow(MayaQWidgetDockableMixin, QMainWindow):
         self.rebuild()
         self.save()
 
+    def remove_override_entry(self, entry):
+        key = (entry.node_uuid or entry.node_path, entry.attr)
+        for group in self.config.groups:
+            group.entries = [e for e in group.entries
+                             if (group.reference_namespace is not None and e.is_referenced)
+                             or (e.node_uuid or e.node_path, e.attr) != key]
+
     def move_entry(self, source_group_index, source_entry_index, target_section, target_index):
         if source_group_index < 0 or source_group_index >= len(self.config.groups):
             return
@@ -313,6 +344,8 @@ class AttrManagerWindow(MayaQWidgetDockableMixin, QMainWindow):
         if source_entry_index < 0 or source_entry_index >= len(source.entries):
             return
         target = target_section.group
+        if target.reference_namespace is not None:
+            return
         entry = source.entries.pop(source_entry_index)
         if source is target and target_index > source_entry_index:
             target_index -= 1
@@ -329,6 +362,9 @@ class AttrManagerWindow(MayaQWidgetDockableMixin, QMainWindow):
         if source_index < 0 or source_index >= len(self.config.groups):
             return
         group = self.config.groups.pop(source_index)
+        if group.reference_namespace is not None:
+            self.config.groups.insert(source_index, group)
+            return
         if target_index > source_index:
             target_index -= 1
         self.config.groups.insert(min(target_index, len(self.config.groups)), group)
@@ -344,18 +380,41 @@ class AttrManagerWindow(MayaQWidgetDockableMixin, QMainWindow):
     def save(self):
         self._save_timer.start()
 
+    def _save_timeout(self):
+        m_utils.executeDeferred(self._save_guard, lowPriority=True)
+
+    def _save_guard(self, *args, **kwargs):
+        try:
+            if isValid(self):
+                self._do_save()
+        except Exception:
+            pass
+
     def _do_save(self):
+        main_groups = []
+        for group in self.config.groups:
+            if group.reference_namespace is None:
+                main_groups.append(group)
+            else:
+                overrides = [e for e in group.entries if not e.is_referenced]
+                if overrides:
+                    main_groups.append(AttrGroup(
+                        name=group.name,
+                        order=group.order,
+                        collapsed=False,
+                        entries=overrides,
+                    ))
         main_config = Config(
             version=self.config.version,
             slider_float_precision=self.config.slider_float_precision,
-            groups=getattr(self, "_main_groups", self.config.groups),
+            groups=main_groups,
         )
         main_config.normalise_orders()
         ok = save_config(main_config)
         if not ok:
             cmds.warning("Attribute Manager: failed to save configuration to scene.")
 
-    def closeEvent(self, event):
+    def _teardown(self):
         if self._save_timer.isActive():
             self._save_timer.stop()
             self._do_save()
@@ -369,7 +428,12 @@ class AttrManagerWindow(MayaQWidgetDockableMixin, QMainWindow):
         global _active_jobs
         _active_jobs = []
         global _window
-        _window = None
+        if _window is self:
+            _window = None
+
+    def closeEvent(self, event):
+        self._teardown()
+        self.deleteLater()
         super().closeEvent(event)
 
 
@@ -400,6 +464,32 @@ def _kill_stale_jobs():
             pass
 
 
+def _set_panel_visibility_callback(workspace):
+    """On panel reopen, refetch the scene config; on close, flush any pending save."""
+    def _on_visibility(*args, **kwargs):
+        global _window
+        if _window is None:
+            return
+        try:
+            visible = cmds.workspaceControl(workspace, query=True, visible=True)
+        except Exception:
+            return
+        try:
+            if visible:
+                _window.load_scene_config()
+            else:
+                timer = getattr(_window, "_save_timer", None)
+                if timer is not None and timer.isActive():
+                    _window._do_save()
+        except Exception as exc:
+            cmds.warning("Attribute Manager: panel visibility callback failed: {}".format(exc))
+
+    try:
+        cmds.workspaceControl(workspace, edit=True, visibleChangeCommand=_on_visibility)
+    except Exception:
+        pass
+
+
 def launch(dockable=True):
     global _window
     _kill_stale_jobs()
@@ -409,11 +499,19 @@ def launch(dockable=True):
         cmds.deleteUI(workspace, control=True)
     for widget in QApplication.topLevelWidgets():
         if widget.objectName() == WINDOW_OBJECT_NAME:
+            try:
+                timer = getattr(widget, "_save_timer", None)
+                if timer is not None:
+                    timer.stop()
+            except Exception:
+                pass
             widget.close()
             widget.deleteLater()
     _window = AttrManagerWindow()
     if dockable:
+        _window.show(dockable=True, floating=True)
         _window.show(dockable=True, area="right", floating=False)
+        _set_panel_visibility_callback(workspace)
     else:
         _window.show()
     return _window

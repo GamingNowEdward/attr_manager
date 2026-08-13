@@ -5,6 +5,7 @@ Usage in Maya Script Editor:
 """
 from __future__ import annotations
 
+import importlib
 import os
 import sys
 
@@ -16,6 +17,20 @@ for _mod_name in list(sys.modules.keys()):
         _file = getattr(_mod, "__file__", None) or ""
         if "attributeManager_maya" not in _file:
             del sys.modules[_mod_name]
+
+_saved_window = None
+if "ui.main_window" in sys.modules:
+    _saved_window = getattr(sys.modules["ui.main_window"], "_window", None)
+
+for _mod_name in list(sys.modules.keys()):
+    if _mod_name.startswith(("ui.", "core.")):
+        _mod = sys.modules[_mod_name]
+        _file = getattr(_mod, "__file__", None) or ""
+        if "attributeManager_maya" in _file:
+            importlib.reload(_mod)
+
+if _saved_window is not None and "ui.main_window" in sys.modules:
+    sys.modules["ui.main_window"]._window = _saved_window
 
 if _SCRIPT_DIR in sys.path:
     sys.path.remove(_SCRIPT_DIR)

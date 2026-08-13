@@ -12,25 +12,25 @@ NODE_NAME = "attrManager"
 ATTR_NAME = "config"
 
 
+def _short_name(node: str) -> str:
+    return node.split("|")[-1].split(":")[-1]
+
+
 def _config_nodes():
-    exact = cmds.ls(NODE_NAME, type="network", long=True) or []
-    if exact:
-        non_ref = [n for n in exact if not _referenced(n)]
-        if non_ref:
-            return non_ref
-    prefix = cmds.ls("{}*".format(NODE_NAME), type="network", long=True) or []
-    return [n for n in prefix if not _referenced(n)]
+    all_network = cmds.ls(type="network", long=True) or []
+    return [n for n in all_network
+            if NODE_NAME in _short_name(n) and not _referenced(n)]
 
 
 def _config_nodes_all():
-    exact = cmds.ls(NODE_NAME, type="network", long=True) or []
-    prefix = cmds.ls("{}*".format(NODE_NAME), type="network", long=True) or []
-    return list(dict.fromkeys(exact + prefix))
+    all_network = cmds.ls(type="network", long=True) or []
+    return [n for n in all_network if NODE_NAME in _short_name(n)]
 
 
 def _get_namespace(node: str) -> Optional[str]:
-    if ":" in node:
-        return node.rsplit(":", 1)[0]
+    name = node.split("|")[-1]
+    if ":" in name:
+        return name.rsplit(":", 1)[0]
     return None
 
 
@@ -92,11 +92,6 @@ def _referenced(node: str) -> bool:
 
 def save_config(config: Config) -> bool:
     """Persist config without adding bookkeeping changes to the undo queue."""
-    existing = _config_nodes()
-    if existing and _referenced(existing[0]):
-        cmds.warning("Attribute Manager: configuration node is referenced and cannot be saved.")
-        return False
-
     filtered_groups = []
     for group in config.groups:
         if group.reference_namespace is not None:

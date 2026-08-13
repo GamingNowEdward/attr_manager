@@ -56,6 +56,9 @@ class GroupDragHandle(QLabel):
     def mouseMoveEvent(self, event):
         if self._start is None:
             return
+        if self.section.group.reference_namespace is not None:
+            self._start = None
+            return
         current = event.position().toPoint() if hasattr(event, "position") else event.pos()
         if (current - self._start).manhattanLength() < 8:
             return
@@ -86,12 +89,18 @@ class EntryContainer(QWidget):
         self._placeholder = None
 
     def dragEnterEvent(self, event):
+        if self.section.group.reference_namespace is not None:
+            event.ignore()
+            return
         if event.mimeData().hasFormat(MIME_TYPE):
             event.acceptProposedAction()
         else:
             event.ignore()
 
     def dragMoveEvent(self, event):
+        if self.section.group.reference_namespace is not None:
+            event.ignore()
+            return
         if not event.mimeData().hasFormat(MIME_TYPE):
             event.ignore()
             return
@@ -288,9 +297,24 @@ class GroupSection(QWidget):
             self.rows.append(row)
         self.container._ensure_placeholder()
 
+    def _find_window(self):
+        widget = self.parent()
+        while widget is not None:
+            if hasattr(widget, "load_scene_config"):
+                return widget
+            widget = widget.parent()
+        return None
+
     def _remove_entry(self, row):
         index = self.rows.index(row)
-        self.group.entries.pop(index)
+        entry = self.group.entries.pop(index)
+        if self.group.reference_namespace is not None and not entry.is_referenced:
+            window = self._find_window()
+            if window is not None:
+                window.remove_override_entry(entry)
+                window._do_save()
+                window.load_scene_config()
+            return
         self.populate()
         self.changed.emit()
 

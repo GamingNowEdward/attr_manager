@@ -16,6 +16,8 @@ A dockable attribute collection panel for Maya 2024/2025. Aggregates frequently 
 - Undo/redo sync: panel values auto-refresh after Ctrl+Z / Ctrl+Shift+Z
 - Config persistence: stored on a locked `attrManager` network node in the scene
 - UUID-based node resolution survives renames and reparenting
+- Reference support: referenced scenes' `attrManager` configs display read-only (grouped, italic rows, drag/drop blocked); editing a referenced attribute creates an **in-place override** — the row stays in its original group, gains an `override` badge, and can be removed with the × button to restore the read-only entry
+- Main-scene entries pointing at referenced nodes (e.g. Translate Z added manually) also show the `override` badge
 - Performance: 300ms debounced config saves; slider drags collapse into a single undo step
 
 ## Quick Start

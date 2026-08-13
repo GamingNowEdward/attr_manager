@@ -31,6 +31,16 @@ from core.channel_box import record_set_attr
 MIME_TYPE = "application/x-attribute-manager-entry"
 
 
+def _node_is_referenced(identifier):
+    if not identifier:
+        return False
+    try:
+        nodes = cmds.ls(identifier, long=True) or []
+        return bool(nodes and cmds.referenceQuery(nodes[0], isNodeReferenced=True))
+    except Exception:
+        return False
+
+
 class ColorButton(QPushButton):
     def __init__(self, node, attr, parent=None):
         super().__init__(parent)
@@ -211,6 +221,11 @@ class AttrRowWidget(QWidget):
         if self.entry.is_referenced:
             self.name_label.setStyleSheet("color: #888888; font-style: italic;")
         layout.addWidget(self.name_label)
+        if not self.entry.is_referenced and self._is_override_display():
+            marker = QLabel("override")
+            marker.setStyleSheet("color: #5285a6; font-size: 9px;")
+            marker.setToolTip("Overridden by this scene")
+            layout.addWidget(marker)
         self.name_edit = QLineEdit(self.entry.display_name)
         self.name_edit.setFixedHeight(20)
         self.name_edit.hide()
@@ -253,6 +268,11 @@ class AttrRowWidget(QWidget):
             except Exception:
                 pass
         return self.entry.node_path if cmds.objExists(self.entry.node_path) else None
+
+    def _is_override_display(self):
+        if self.group_section is not None and self.group_section.group.reference_namespace is not None:
+            return True
+        return _node_is_referenced(self.entry.node_uuid or self.entry.node_path)
 
     def _build_editor(self, layout, node):
         attr_type = cmds.getAttr("{}.{}".format(node, self.entry.attr), type=True)
@@ -401,12 +421,24 @@ class AttrRowWidget(QWidget):
 
         def _slider_pressed(n=node, a=attr):
             cmds.undoInfo(openChunk=True, chunkName="Attribute Manager slider: {}.{}".format(n, a))
+            from ui.main_window import _window as _w
+            if _w is not None:
+                try:
+                    _w._slider_chunks.add(self)
+                except Exception:
+                    pass
 
         def _slider_released():
             try:
                 cmds.undoInfo(closeChunk=True)
             except Exception:
                 pass
+            from ui.main_window import _window as _w
+            if _w is not None:
+                try:
+                    _w._slider_chunks.discard(self)
+                except Exception:
+                    pass
 
         slider.sliderPressed.connect(_slider_pressed)
         slider.sliderReleased.connect(_slider_released)
@@ -492,17 +524,7 @@ class AttrRowWidget(QWidget):
 
     def _set_value(self, node, attr, value, skip_chunk=False):
         if self.entry.is_referenced:
-            reply = QMessageBox.question(
-                self, "Override Referenced Attribute",
-                "This attribute is from a referenced scene.\n"
-                "Changes will be saved as an override in the main scene.\n\n"
-                "Continue?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No
-            )
-            if reply != QMessageBox.Yes:
-                return
-            self._create_override_and_set(node, attr, value)
+            self._create_override_and_set(node, attr, value, skip_chunk=skip_chunk)
             return
 
         if skip_chunk:
@@ -523,61 +545,70 @@ class AttrRowWidget(QWidget):
             cmds.undoInfo(closeChunk=True)
         self.changed.emit()
 
-    def _create_override_and_set(self, node, attr, value):
-        section = self.group_section
-        if section is None:
-            cmds.warning("Attribute Manager: cannot create override - no section context.")
-            return
-        window = section.window() if hasattr(section, "window") else None
-        while window is not None and not hasattr(window, "_main_groups"):
-            window = window.parent()
+    def _create_override_and_set(self, node, attr, value, skip_chunk=False):
+        from ui.main_window import _window as window
         if window is None:
             cmds.warning("Attribute Manager: cannot find main window.")
             return
 
-        from core.attr_data import AttrEntry
-        override_entry = AttrEntry(
-            display_name=self.entry.display_name,
-            node_path=self.entry.node_path,
-            node_uuid=self.entry.node_uuid,
-            attr=self.entry.attr,
-            control_mode=self.entry.control_mode,
-            custom_min=self.entry.custom_min,
-            custom_max=self.entry.custom_max,
-            display_type=self.entry.display_type,
-            is_referenced=False,
-        )
+        from core.attr_data import AttrEntry, AttrGroup
+        key = (self.entry.node_uuid or self.entry.node_path, self.entry.attr)
 
-        main_groups = getattr(window, "_main_groups", [])
+        main_groups = [g for g in window.config.groups if g.reference_namespace is None]
         if not main_groups:
-            from core.attr_data import AttrGroup
             new_group = AttrGroup(name="Overrides")
-            main_groups.append(new_group)
             window.config.groups.append(new_group)
+            main_groups = [new_group]
 
-        target_group = main_groups[0]
-        existing_keys = {(e.node_uuid or e.node_path, e.attr) for e in target_group.entries}
-        key = (override_entry.node_uuid or override_entry.node_path, override_entry.attr)
-        if key in existing_keys:
-            cmds.warning("Attribute Manager: override already exists for {}.{}".format(node, attr))
-            return
+        exists = False
+        for group in window.config.groups:
+            for e in group.entries:
+                if group.reference_namespace is not None and e.is_referenced:
+                    continue
+                if (e.node_uuid or e.node_path, e.attr) == key:
+                    exists = True
+                    break
+            if exists:
+                break
 
-        override_entry.order = len(target_group.entries)
-        target_group.entries.append(override_entry)
+        if skip_chunk:
+            try:
+                cmds.setAttr("{}.{}".format(node, attr), value)
+                record_set_attr(node, attr)
+            except Exception as exc:
+                cmds.warning("Attribute Manager: could not set {}.{}: {}".format(node, attr, exc))
+        else:
+            try:
+                cmds.undoInfo(openChunk=True, chunkName="Attribute Manager: override {}.{}".format(node, attr))
+                cmds.setAttr("{}.{}".format(node, attr), value)
+                record_set_attr(node, attr)
+            except Exception as exc:
+                cmds.warning("Attribute Manager: could not set {}.{}: {}".format(node, attr, exc))
+            finally:
+                cmds.undoInfo(closeChunk=True)
 
-        try:
-            cmds.undoInfo(openChunk=True, chunkName="Attribute Manager: override {}.{}".format(node, attr))
-            cmds.setAttr("{}.{}".format(node, attr), value)
-            record_set_attr(node, attr)
-        except Exception as exc:
-            cmds.warning("Attribute Manager: could not set {}.{}: {}".format(node, attr, exc))
-        finally:
-            cmds.undoInfo(closeChunk=True)
+        if not exists:
+            override_entry = AttrEntry(
+                display_name=self.entry.display_name,
+                node_path=self.entry.node_path,
+                node_uuid=self.entry.node_uuid,
+                attr=self.entry.attr,
+                control_mode=self.entry.control_mode,
+                custom_min=self.entry.custom_min,
+                custom_max=self.entry.custom_max,
+                display_type=self.entry.display_type,
+                is_referenced=False,
+            )
+            target_group = main_groups[0]
+            override_entry.order = len(target_group.entries)
+            target_group.entries.append(override_entry)
 
-        if hasattr(window, "save"):
-            window.save()
-        if hasattr(window, "load_scene_config"):
+        if hasattr(window, "_do_save"):
+            window._do_save()
+        if not exists and hasattr(window, "load_scene_config"):
             window.load_scene_config()
+        elif hasattr(window, "refresh_all_values"):
+            window.refresh_all_values()
         self.changed.emit()
 
     def _begin_rename(self, _event):

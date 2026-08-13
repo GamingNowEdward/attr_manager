@@ -88,6 +88,8 @@ class AddAttrDialog(QDialog):
         target.addWidget(QLabel("Target group:"))
         self.group_combo = QComboBox()
         for index, group in enumerate(self.groups):
+            if group.reference_namespace is not None:
+                continue
             self.group_combo.addItem(group.name, index)
         target.addWidget(self.group_combo, 1)
         root.addLayout(target)
