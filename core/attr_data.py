@@ -23,6 +23,7 @@ class AttrEntry:
     custom_min: Optional[float] = None
     custom_max: Optional[float] = None
     display_type: str = "auto"
+    is_referenced: bool = False
 
     def to_dict(self) -> dict:
         data = {
@@ -52,6 +53,7 @@ class AttrEntry:
             custom_min=value.get("custom_min"),
             custom_max=value.get("custom_max"),
             display_type=str(value.get("display_type", "auto")),
+            is_referenced=bool(value.get("is_referenced", False)),
         )
 
 
@@ -61,14 +63,18 @@ class AttrGroup:
     order: int = 0
     collapsed: bool = False
     entries: List[AttrEntry] = field(default_factory=list)
+    reference_namespace: Optional[str] = None
 
     def to_dict(self) -> dict:
-        return {
+        data = {
             "name": self.name,
             "order": self.order,
             "collapsed": self.collapsed,
             "entries": [entry.to_dict() for entry in self.entries],
         }
+        if self.reference_namespace is not None:
+            data["reference_namespace"] = self.reference_namespace
+        return data
 
     @classmethod
     def from_dict(cls, value: dict) -> "AttrGroup":
@@ -77,6 +83,7 @@ class AttrGroup:
             order=int(value.get("order", 0)),
             collapsed=bool(value.get("collapsed", False)),
             entries=[AttrEntry.from_dict(item) for item in value.get("entries", [])],
+            reference_namespace=value.get("reference_namespace"),
         )
 
 

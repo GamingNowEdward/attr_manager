@@ -207,7 +207,28 @@ class AttrManagerWindow(MayaQWidgetDockableMixin, QMainWindow):
                 cmds.warning("Attribute Manager: refresh failed: {}".format(exc))
 
     def load_scene_config(self):
-        self.config = load_config()
+        merged_config = load_config()
+        self.config = merged_config
+        self._main_groups = [g for g in merged_config.groups if g.reference_namespace is None]
+        self._ref_groups = [g for g in merged_config.groups if g.reference_namespace is not None]
+
+        main_keys = set()
+        for group in self._main_groups:
+            for entry in group.entries:
+                main_keys.add((entry.node_uuid or entry.node_path, entry.attr))
+
+        visible_groups = list(self._main_groups)
+        for ref_group in self._ref_groups:
+            visible_entries = []
+            for entry in ref_group.entries:
+                key = (entry.node_uuid or entry.node_path, entry.attr)
+                if key not in main_keys:
+                    visible_entries.append(entry)
+            if visible_entries:
+                ref_group.entries = visible_entries
+                visible_groups.append(ref_group)
+
+        self.config.groups = visible_groups
         self._update_snap_buttons()
         self.rebuild()
 
@@ -324,8 +345,13 @@ class AttrManagerWindow(MayaQWidgetDockableMixin, QMainWindow):
         self._save_timer.start()
 
     def _do_save(self):
-        self.config.normalise_orders()
-        ok = save_config(self.config)
+        main_config = Config(
+            version=self.config.version,
+            slider_float_precision=self.config.slider_float_precision,
+            groups=getattr(self, "_main_groups", self.config.groups),
+        )
+        main_config.normalise_orders()
+        ok = save_config(main_config)
         if not ok:
             cmds.warning("Attribute Manager: failed to save configuration to scene.")
 

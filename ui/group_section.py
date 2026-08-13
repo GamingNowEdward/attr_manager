@@ -158,17 +158,32 @@ class EntryContainer(QWidget):
 
 class GroupTitleLabel(QLabel):
     def __init__(self, section):
-        super().__init__(section.group.name)
+        super().__init__(self._make_title(section))
         self.section = section
         self._start = None
         self.setObjectName("groupTitle")
+        if section.group.reference_namespace:
+            self.setStyleSheet("color: #888888; font-style: italic;")
+            self.setToolTip("From referenced scene: {}".format(section.group.reference_namespace))
+
+    @staticmethod
+    def _make_title(section):
+        if section.group.reference_namespace:
+            return "{} [{}]".format(section.group.name, section.group.reference_namespace)
+        return section.group.name
 
     def mousePressEvent(self, event):
+        if self.section.group.reference_namespace:
+            event.ignore()
+            return
         if event.button() == Qt.LeftButton:
             self._start = event.position().toPoint() if hasattr(event, "position") else event.pos()
             event.accept()
 
     def mouseMoveEvent(self, event):
+        if self.section.group.reference_namespace:
+            event.ignore()
+            return
         if self._start is None:
             return
         current = event.position().toPoint() if hasattr(event, "position") else event.pos()
@@ -188,6 +203,9 @@ class GroupTitleLabel(QLabel):
         self._start = None
 
     def mouseDoubleClickEvent(self, event):
+        if self.section.group.reference_namespace:
+            event.ignore()
+            return
         self.section._begin_rename(event)
 
 
@@ -208,12 +226,17 @@ class GroupSection(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
         self.setFocusPolicy(Qt.ClickFocus)
+        is_ref = bool(self.group.reference_namespace)
         header_widget = QWidget()
         header_widget.setObjectName("groupHeader")
+        if is_ref:
+            header_widget.setStyleSheet("background-color: #3a3a3a;")
         header = QHBoxLayout(header_widget)
         header.setContentsMargins(2, 1, 2, 1)
         header.setSpacing(2)
         self.arrow = GroupDragHandle(self)
+        if is_ref:
+            self.arrow.setToolTip("Referenced group - cannot reorder")
         header.addWidget(self.arrow)
         self.title = GroupTitleLabel(self)
         header.addWidget(self.title)
@@ -227,6 +250,8 @@ class GroupSection(QWidget):
         remove.setFixedSize(20, 20)
         remove.setToolTip("Remove group")
         remove.clicked.connect(lambda: self.remove_requested.emit(self))
+        if is_ref:
+            remove.hide()
         header.addWidget(remove)
         outer.addWidget(header_widget)
         self.container = EntryContainer(self)

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from typing import Optional
+
 import maya.cmds as cmds
 
-from .attr_data import Config, resolve_entries
+from .attr_data import AttrGroup, Config, resolve_entries
 
 NODE_NAME = "attrManager"
 ATTR_NAME = "config"
@@ -13,8 +15,33 @@ ATTR_NAME = "config"
 def _config_nodes():
     exact = cmds.ls(NODE_NAME, type="network", long=True) or []
     if exact:
-        return exact
-    return cmds.ls("{}*".format(NODE_NAME), type="network", long=True) or []
+        non_ref = [n for n in exact if not _referenced(n)]
+        if non_ref:
+            return non_ref
+    prefix = cmds.ls("{}*".format(NODE_NAME), type="network", long=True) or []
+    return [n for n in prefix if not _referenced(n)]
+
+
+def _config_nodes_all():
+    exact = cmds.ls(NODE_NAME, type="network", long=True) or []
+    prefix = cmds.ls("{}*".format(NODE_NAME), type="network", long=True) or []
+    return list(dict.fromkeys(exact + prefix))
+
+
+def _get_namespace(node: str) -> Optional[str]:
+    if ":" in node:
+        return node.rsplit(":", 1)[0]
+    return None
+
+
+def _load_from_node(node: str) -> Config:
+    if not cmds.attributeQuery(ATTR_NAME, node=node, exists=True):
+        return Config()
+    try:
+        raw = cmds.getAttr("{}.{}".format(node, ATTR_NAME))
+        return Config.from_json(raw) or Config()
+    except Exception:
+        return Config()
 
 
 def _any_node():
@@ -69,6 +96,26 @@ def save_config(config: Config) -> bool:
     if existing and _referenced(existing[0]):
         cmds.warning("Attribute Manager: configuration node is referenced and cannot be saved.")
         return False
+
+    filtered_groups = []
+    for group in config.groups:
+        if group.reference_namespace is not None:
+            continue
+        filtered_entries = [e for e in group.entries if not e.is_referenced]
+        filtered_groups.append(AttrGroup(
+            name=group.name,
+            order=group.order,
+            collapsed=group.collapsed,
+            entries=filtered_entries,
+            reference_namespace=None,
+        ))
+
+    filtered_config = Config(
+        version=config.version,
+        slider_float_precision=config.slider_float_precision,
+        groups=filtered_groups,
+    )
+
     undo_enabled = cmds.undoInfo(query=True, state=True)
     cmds.undoInfo(stateWithoutFlush=False)
     node = None
@@ -84,7 +131,7 @@ def save_config(config: Config) -> bool:
             cmds.lockNode(node, lock=False)
         if was_locked:
             cmds.setAttr(plug, lock=False)
-        cmds.setAttr(plug, config.to_json(), type="string")
+        cmds.setAttr(plug, filtered_config.to_json(), type="string")
         return True
     except Exception as exc:
         cmds.warning("Attribute Manager: could not save configuration: {}".format(exc))
@@ -101,12 +148,29 @@ def save_config(config: Config) -> bool:
 
 
 def load_config() -> Config:
-    nodes = _config_nodes()
-    if not nodes or not cmds.attributeQuery(ATTR_NAME, node=nodes[0], exists=True):
+    all_nodes = _config_nodes_all()
+    if not all_nodes:
         return Config()
-    try:
-        config = Config.from_json(cmds.getAttr("{}.{}".format(nodes[0], ATTR_NAME))) or Config()
-    except Exception:
-        return Config()
-    resolve_entries(config)
-    return config
+
+    main_config = Config()
+    ref_configs = []
+
+    for node in all_nodes:
+        node_config = _load_from_node(node)
+        is_ref = _referenced(node)
+
+        if is_ref:
+            namespace = _get_namespace(node)
+            for group in node_config.groups:
+                group.reference_namespace = namespace
+                for entry in group.entries:
+                    entry.is_referenced = True
+            ref_configs.append(node_config)
+        else:
+            main_config = node_config
+
+    for ref_config in ref_configs:
+        main_config.groups.extend(ref_config.groups)
+
+    resolve_entries(main_config)
+    return main_config

@@ -12,16 +12,16 @@ try:
     from PySide6.QtGui import QDrag, QAction
     from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog,
                                    QDialogButtonBox, QDoubleSpinBox, QFormLayout,
-                                   QHBoxLayout, QLabel, QLineEdit, QMenu, QPushButton,
-                                   QSlider, QSpinBox, QVBoxLayout, QWidget)
+                                   QHBoxLayout, QLabel, QLineEdit, QMenu, QMessageBox,
+                                   QPushButton, QSlider, QSpinBox, QVBoxLayout, QWidget)
     from shiboken6 import isValid
 except ImportError:  # Maya 2024 normally uses PySide6; retain older compatibility.
     from PySide2.QtCore import Qt, Signal, QMimeData, QTimer
     from PySide2.QtGui import QDrag
     from PySide2.QtWidgets import (QApplication, QAction, QCheckBox, QComboBox, QDialog,
                                    QDialogButtonBox, QDoubleSpinBox, QFormLayout,
-                                   QHBoxLayout, QLabel, QLineEdit, QMenu, QPushButton,
-                                   QSlider, QSpinBox, QVBoxLayout, QWidget)
+                                   QHBoxLayout, QLabel, QLineEdit, QMenu, QMessageBox,
+                                   QPushButton, QSlider, QSpinBox, QVBoxLayout, QWidget)
     from shiboken2 import isValid
 
 from core.attr_data import AttrEntry
@@ -208,6 +208,8 @@ class AttrRowWidget(QWidget):
         self.name_label.setFixedHeight(20)
         self.name_label.setToolTip("{}.{}".format(self.entry.node_path, self.entry.attr))
         self.name_label.mouseDoubleClickEvent = self._begin_rename
+        if self.entry.is_referenced:
+            self.name_label.setStyleSheet("color: #888888; font-style: italic;")
         layout.addWidget(self.name_label)
         self.name_edit = QLineEdit(self.entry.display_name)
         self.name_edit.setFixedHeight(20)
@@ -238,6 +240,8 @@ class AttrRowWidget(QWidget):
         remove.setFixedSize(20, 20)
         remove.setToolTip("Remove attribute")
         remove.clicked.connect(lambda: self.removed.emit(self))
+        if self.entry.is_referenced:
+            remove.hide()
         layout.addWidget(remove)
 
     def _resolve_node(self):
@@ -487,6 +491,20 @@ class AttrRowWidget(QWidget):
         return 1000 if self._float_precision else 1
 
     def _set_value(self, node, attr, value, skip_chunk=False):
+        if self.entry.is_referenced:
+            reply = QMessageBox.question(
+                self, "Override Referenced Attribute",
+                "This attribute is from a referenced scene.\n"
+                "Changes will be saved as an override in the main scene.\n\n"
+                "Continue?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            if reply != QMessageBox.Yes:
+                return
+            self._create_override_and_set(node, attr, value)
+            return
+
         if skip_chunk:
             try:
                 cmds.setAttr("{}.{}".format(node, attr), value)
@@ -503,6 +521,63 @@ class AttrRowWidget(QWidget):
             cmds.warning("Attribute Manager: could not set {}.{}: {}".format(node, attr, exc))
         finally:
             cmds.undoInfo(closeChunk=True)
+        self.changed.emit()
+
+    def _create_override_and_set(self, node, attr, value):
+        section = self.group_section
+        if section is None:
+            cmds.warning("Attribute Manager: cannot create override - no section context.")
+            return
+        window = section.window() if hasattr(section, "window") else None
+        while window is not None and not hasattr(window, "_main_groups"):
+            window = window.parent()
+        if window is None:
+            cmds.warning("Attribute Manager: cannot find main window.")
+            return
+
+        from core.attr_data import AttrEntry
+        override_entry = AttrEntry(
+            display_name=self.entry.display_name,
+            node_path=self.entry.node_path,
+            node_uuid=self.entry.node_uuid,
+            attr=self.entry.attr,
+            control_mode=self.entry.control_mode,
+            custom_min=self.entry.custom_min,
+            custom_max=self.entry.custom_max,
+            display_type=self.entry.display_type,
+            is_referenced=False,
+        )
+
+        main_groups = getattr(window, "_main_groups", [])
+        if not main_groups:
+            from core.attr_data import AttrGroup
+            new_group = AttrGroup(name="Overrides")
+            main_groups.append(new_group)
+            window.config.groups.append(new_group)
+
+        target_group = main_groups[0]
+        existing_keys = {(e.node_uuid or e.node_path, e.attr) for e in target_group.entries}
+        key = (override_entry.node_uuid or override_entry.node_path, override_entry.attr)
+        if key in existing_keys:
+            cmds.warning("Attribute Manager: override already exists for {}.{}".format(node, attr))
+            return
+
+        override_entry.order = len(target_group.entries)
+        target_group.entries.append(override_entry)
+
+        try:
+            cmds.undoInfo(openChunk=True, chunkName="Attribute Manager: override {}.{}".format(node, attr))
+            cmds.setAttr("{}.{}".format(node, attr), value)
+            record_set_attr(node, attr)
+        except Exception as exc:
+            cmds.warning("Attribute Manager: could not set {}.{}: {}".format(node, attr, exc))
+        finally:
+            cmds.undoInfo(closeChunk=True)
+
+        if hasattr(window, "save"):
+            window.save()
+        if hasattr(window, "load_scene_config"):
+            window.load_scene_config()
         self.changed.emit()
 
     def _begin_rename(self, _event):
