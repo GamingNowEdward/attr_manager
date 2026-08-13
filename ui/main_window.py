@@ -490,13 +490,71 @@ def _set_panel_visibility_callback(workspace):
         pass
 
 
+LEGACY_WORKSPACE_NAME = "attrManagerMainWindowWorkspaceControl"
+
+
+def _attach_to_workspace(window, workspace):
+    """Attach the window to an existing workspace control, preserving its layout."""
+    try:
+        window.show()
+        for _ in range(20):
+            QApplication.processEvents()
+        wc_ptr = omui.MQtUtil.findControl(workspace)
+        win_ptr = omui.MQtUtil.findControl(WINDOW_OBJECT_NAME)
+        if wc_ptr is None or win_ptr is None:
+            return False
+        omui.MQtUtil.addWidgetToMayaLayout(int(win_ptr), int(wc_ptr))
+        for _ in range(20):
+            QApplication.processEvents()
+        parent = window.parentWidget()
+        if parent is None or parent.objectName() != workspace:
+            return False
+        _set_panel_visibility_callback(workspace)
+        return True
+    except Exception:
+        return False
+
+
+def _set_ui_script(workspace):
+    """Let Maya rebuild the panel automatically when it restores this workspace control.
+
+    The Python flavour of workspaceControl treats ``uiScript`` as Python code, so pass
+    bare Python (no ``python("...")`` MEL wrapper); Maya wraps it when persisting.
+    Forward slashes avoid backslash escaping through the MEL/JSON layers.
+    """
+    import os as _os
+    launch_path = _os.path.abspath(
+        _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "launch.py")
+    ).replace("\\", "/")
+    script = (
+        "__file__ = r'{path}'; exec(compile(open(__file__).read(), __file__, 'exec'))"
+    ).format(path=launch_path)
+    try:
+        cmds.workspaceControl(workspace, edit=True, uiScript=script)
+    except Exception:
+        pass
+
+
+def _restore_from_ui_script(*args, **kwargs):
+    """Called by Maya's workspace control uiScript when the session is restored."""
+    global _window
+    if _window is not None and isValid(_window):
+        return
+    try:
+        launch(dockable=True)
+    except Exception as exc:
+        cmds.warning("Attribute Manager: session restore failed: {}".format(exc))
+
+
 def launch(dockable=True):
     global _window
     _kill_stale_jobs()
     workspace = WINDOW_OBJECT_NAME + "WorkspaceControl"
-    if cmds.workspaceControl(workspace, exists=True):
-        cmds.workspaceControl(workspace, edit=True, close=True)
-        cmds.deleteUI(workspace, control=True)
+    if cmds.workspaceControl(LEGACY_WORKSPACE_NAME, exists=True):
+        try:
+            cmds.deleteUI(LEGACY_WORKSPACE_NAME, control=True)
+        except Exception:
+            pass
     for widget in QApplication.topLevelWidgets():
         if widget.objectName() == WINDOW_OBJECT_NAME:
             try:
@@ -507,10 +565,26 @@ def launch(dockable=True):
                 pass
             widget.close()
             widget.deleteLater()
+
+    if cmds.workspaceControl(workspace, exists=True):
+        cmds.workspaceControl(workspace, edit=True, close=True)
+        _window = AttrManagerWindow()
+        if dockable:
+            if not _attach_to_workspace(_window, workspace):
+                cmds.deleteUI(workspace, control=True)
+                _window.show(dockable=True, floating=True)
+                _window.show(dockable=True, area="right", floating=False)
+                _set_ui_script(workspace)
+                _set_panel_visibility_callback(workspace)
+        else:
+            _window.show()
+        return _window
+
     _window = AttrManagerWindow()
     if dockable:
         _window.show(dockable=True, floating=True)
         _window.show(dockable=True, area="right", floating=False)
+        _set_ui_script(workspace)
         _set_panel_visibility_callback(workspace)
     else:
         _window.show()
