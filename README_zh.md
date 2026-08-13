@@ -23,8 +23,10 @@ Maya 2024/2025 属性集合面板工具。将场景中常用属性聚合到一�
 在 Maya Script Editor 中执行：
 
 ```python
-exec(compile(open(r"C:\opencode\attributeManager_maya\launch.py").read(), r"C:\opencode\attributeManager_maya\launch.py", "exec"))
+__file__ = r"PATH_TO\launch.py"; exec(compile(open(__file__).read(), __file__, "exec"))
 ```
+
+> **注意**：如果从 GitHub 下载 ZIP，解压后的文件夹名为 `attr_manager-main`。请相应调整路径。
 
 面板会停靠到 Maya 右侧。每次调用会自动热重载所有模块，方便开发迭代。
 

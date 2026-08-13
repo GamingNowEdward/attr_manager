@@ -23,8 +23,10 @@ A dockable attribute collection panel for Maya 2024/2025. Aggregates frequently 
 Run in Maya Script Editor:
 
 ```python
-exec(compile(open(r"C:\opencode\attributeManager_maya\launch.py").read(), r"C:\opencode\attributeManager_maya\launch.py", "exec"))
+__file__ = r"PATH_TO\launch.py"; exec(compile(open(__file__).read(), __file__, "exec"))
 ```
+
+> **Note**: If downloaded as ZIP from GitHub, the folder will be named `attr_manager-main`. Adjust the path accordingly.
 
 The panel docks to Maya's right side. Each call hot-reloads all modules for development iteration.
 
