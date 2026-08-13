@@ -18,9 +18,15 @@ Maya 2024/2025 属性集合面板工具。将场景中常用属性聚合到一�
 - 节点重命名后通过 UUID 自动恢复引用
 - 高性能：配置保存 300ms 防抖；滑块拖动合并为单个撤销步骤
 
+## 快速开始
+
+1. 下载并解压仓库
+2. 双击 `copy_to_clipboard.bat` — 启动命令自动复制到剪贴板
+3. 在 Maya Script Editor 中粘贴并执行
+
 ## 使用
 
-在 Maya Script Editor 中执行：
+或手动在 Maya Script Editor 中执行：
 
 ```python
 __file__ = r"PATH_TO\launch.py"; exec(compile(open(__file__).read(), __file__, "exec"))
@@ -39,6 +45,7 @@ __file__ = r"PATH_TO\launch.py"; exec(compile(open(__file__).read(), __file__, "
 
 ```
 attributeManager_maya/
+├── copy_to_clipboard.bat  # 自动生成启动命令
 ├── launch.py              # 便携式启动器
 ├── attributeManager.py    # 入口
 ├── __init__.py            # 包导出（launch/reload_modules）

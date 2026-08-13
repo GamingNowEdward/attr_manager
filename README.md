@@ -18,9 +18,15 @@ A dockable attribute collection panel for Maya 2024/2025. Aggregates frequently 
 - UUID-based node resolution survives renames and reparenting
 - Performance: 300ms debounced config saves; slider drags collapse into a single undo step
 
+## Quick Start
+
+1. Download and extract the repository
+2. Double-click `copy_to_clipboard.bat` — the launch command is copied to clipboard
+3. Paste into Maya Script Editor and run
+
 ## Usage
 
-Run in Maya Script Editor:
+Or manually run in Maya Script Editor:
 
 ```python
 __file__ = r"PATH_TO\launch.py"; exec(compile(open(__file__).read(), __file__, "exec"))
@@ -39,6 +45,7 @@ The panel docks to Maya's right side. Each call hot-reloads all modules for deve
 
 ```
 attributeManager_maya/
+├── copy_to_clipboard.bat  # Auto-generate launch command
 ├── launch.py              # Portable launcher
 ├── attributeManager.py    # Entry point
 ├── __init__.py            # Package re-exports (launch/reload_modules)
