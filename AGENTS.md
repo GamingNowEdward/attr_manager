@@ -6,10 +6,9 @@ A dockable Maya 2024/2025 panel (Python 3 + PySide6) that aggregates scene attri
 ## Running
 No build step. In Maya Script Editor:
 ```python
-import sys; sys.path.insert(0, r"<parent_dir_of_attributeManager>")
-import attributeManager; attributeManager.launch()
+exec(open(r"C:\opencode\attributeManager_maya\launch.py").read())
 ```
-`launch()` hot-reloads all modules automatically.
+`launch()` hot-reloads all modules automatically. The launcher auto-configures `sys.path` — no manual setup needed.
 
 ## Architecture
 - `attributeManager.py` — entry point, module reload, `__init__.py` re-exports `launch`/`reload_modules` from it.

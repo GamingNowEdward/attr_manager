@@ -1,78 +1,53 @@
-# Attribute Manager - Maya Style
-
-这是 `attributeManager` 的独立 Maya 风格版本，使用更接近 Channel Box 的灰色层级、`#5285a6` 选中高亮与紧凑控件。原版项目未被修改。
-
-在 Maya Script Editor 中启动：
-
-```python
-import sys; sys.path.insert(0, r"C:\\opencode")
-import attributeManager_maya; attributeManager_maya.launch()
-```
-
 # Attribute Manager
 
-Maya 2024/2025 属性集合面板工具。将场景中常用属性聚合到一个可停靠面板，支持快速调节、分组管理、拖拽排序，配置随场景保存。
+A dockable attribute collection panel for Maya 2024/2025. Aggregates frequently used scene attributes into one panel with grouped management, drag-and-drop reordering, and per-scene persistence.
 
-## 功能
+## Features
 
-- 从 Channel Box 或手动输入添加属性（自动搜索 Shape 节点）
-- "+ Last Attr" 快捷按钮：自动读取最近一次修改的属性（面板修改或 Script Editor 日志）
-- 属性按类型自动匹配控件：Slider+SpinBox / CheckBox / ComboBox / 色块按钮
-- 显示类型可选：Auto / Number / Color，颜色属性点击打开 Maya 色板
-- 自定义 Slider 范围：右键滑块 → Set Min/Max/Range/Reset（范围围绕当前值自动生成）
-- 全局 Int/Float Snap 切换：整数步进 / 浮点步进（3 位小数）
-- 分组管理：折叠、重命名（双击）、拖拽排序
-- 属性条目：拖拽排序、跨组拖拽、双击重命名；空分组显示占位提示，仍可作为拖放目标
-- 完整撤销支持：属性修改（含滑块拖动）均可撤销，配置保存不污染撤销栈
-- 撤销/重做同步：Ctrl+Z / Ctrl+Shift+Z 后面板数值自动刷新
-- 配置持久化：存储在场景内 `attrManager` network 节点，随文件保存
-- 节点重命名后通过 UUID 自动恢复引用
-- 高性能：配置保存 300ms 防抖；滑块拖动合并为单个撤销步骤
+- Add attributes from Channel Box or manual plug input (auto-searches Shape nodes)
+- "+ Last Attr" quick button: auto-fills the plug from the most recently modified attribute (panel edits or Script Editor log)
+- Auto-matched controls by type: Slider+SpinBox / CheckBox / ComboBox / Color swatch
+- Display type override: Auto / Number / Color; color attributes open Maya's color editor
+- Custom slider range: right-click the slider → Set Min/Max/Range/Reset (default range wraps the current value)
+- Global Int/Float Snap toggle: integer steps vs float steps (3 decimal places)
+- Group management: collapse, rename (double-click), drag reorder
+- Entry management: drag reorder, cross-group drag, double-click rename; empty groups show a placeholder and remain a valid drop target
+- Full undo support: attribute edits (including slider drags) are undoable; config saves never pollute the undo stack
+- Undo/redo sync: panel values auto-refresh after Ctrl+Z / Ctrl+Shift+Z
+- Config persistence: stored on a locked `attrManager` network node in the scene
+- UUID-based node resolution survives renames and reparenting
+- Performance: 300ms debounced config saves; slider drags collapse into a single undo step
 
-## 安装
+## Usage
 
-将 `attributeManager` 文件夹的**父目录**加入 Maya Python 路径：
-
-**方式一：Maya.env（推荐）**
-```
-MAYA_SCRIPT_PATH += C:/opencode
-```
-文件位置：`~/Documents/maya/2024/Maya.env`
-
-**方式二：手动**
-```python
-import sys
-sys.path.insert(0, r"C:\opencode")
-```
-
-## 使用
+Run in Maya Script Editor:
 
 ```python
-import attributeManager
-attributeManager.launch()
+exec(open(r"C:\opencode\attributeManager_maya\launch.py").read())
 ```
 
-面板会停靠到 Maya 右侧。`launch()` 每次调用会自动热重载所有模块，方便开发迭代。
+The panel docks to Maya's right side. Each call hot-reloads all modules for development iteration.
 
-## 环境要求
+## Requirements
 
-- Maya 2024 / 2025（Python 3 + PySide6）
-- 兼容 Maya 2022/2023（PySide2 fallback）
+- Maya 2024 / 2025 (Python 3 + PySide6)
+- Compatible with Maya 2022/2023 (PySide2 fallback)
 
-## 项目结构
+## Project Structure
 
 ```
-attributeManager/
-├── attributeManager.py      # 入口
-├── __init__.py              # 包导出（launch/reload_modules）
+attributeManager_maya/
+├── launch.py              # Portable launcher
+├── attributeManager.py    # Entry point
+├── __init__.py            # Package re-exports (launch/reload_modules)
 ├── core/
-│   ├── attr_data.py         # 数据模型 + JSON 序列化
-│   ├── scene_io.py          # 场景节点读写
-│   └── channel_box.py       # Channel Box 查询 + Last Attr
+│   ├── attr_data.py       # Data model + JSON serialisation
+│   ├── scene_io.py        # Scene node read/write
+│   └── channel_box.py     # Channel Box queries + Last Attr
 └── ui/
-    ├── main_window.py       # Dockable 主窗口
-    ├── group_section.py     # 分组 + 拖拽
-    ├── attr_row_widget.py   # 属性行控件
-    ├── add_attr_dialog.py   # 添加属性对话框
-    └── styles.py            # QSS 样式表
+    ├── main_window.py     # Dockable main window
+    ├── group_section.py   # Groups + drag-drop
+    ├── attr_row_widget.py # Attribute row controls
+    ├── add_attr_dialog.py # Add attribute dialog
+    └── styles.py          # QSS stylesheet
 ```
