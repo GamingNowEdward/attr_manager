@@ -7,21 +7,23 @@ import maya.cmds as cmds
 try:
     from PySide6.QtCore import Qt
     from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog,
-                                   QDialogButtonBox, QHBoxLayout, QLabel,
-                                   QLineEdit, QListWidget, QListWidgetItem,
+                                   QDialogButtonBox, QHBoxLayout, QInputDialog,
+                                   QLabel, QLineEdit, QListWidget, QListWidgetItem,
                                    QPushButton, QRadioButton, QStackedWidget,
                                    QVBoxLayout, QWidget)
 except ImportError:
     from PySide2.QtCore import Qt
     from PySide2.QtWidgets import (QCheckBox, QComboBox, QDialog,
-                                   QDialogButtonBox, QHBoxLayout, QLabel,
-                                   QLineEdit, QListWidget, QListWidgetItem,
+                                   QDialogButtonBox, QHBoxLayout, QInputDialog,
+                                   QLabel, QLineEdit, QListWidget, QListWidgetItem,
                                    QPushButton, QRadioButton, QStackedWidget,
                                    QVBoxLayout, QWidget)
 
-from core.attr_data import AttrEntry
+from core.attr_data import AttrEntry, AttrGroup
 from core.channel_box import get_channelbox_selection, get_selected_objects, get_last_set_attr
 from ui.styles import STYLESHEET
+
+NEW_GROUP_LABEL = "New Group..."
 
 
 def _nodes_with_shapes(node):
@@ -44,6 +46,8 @@ class AddAttrDialog(QDialog):
         self.setStyleSheet(STYLESHEET)
         self.groups = groups
         self.entries = []
+        self._created_group = None
+        self._last_group_index = -1
         self._build()
         self.refresh_channel_box()
 
@@ -87,10 +91,8 @@ class AddAttrDialog(QDialog):
         target = QHBoxLayout()
         target.addWidget(QLabel("Target group:"))
         self.group_combo = QComboBox()
-        for index, group in enumerate(self.groups):
-            if group.reference_namespace is not None:
-                continue
-            self.group_combo.addItem(group.name, index)
+        self._populate_group_combo()
+        self.group_combo.currentIndexChanged.connect(self._on_group_combo_changed)
         target.addWidget(self.group_combo, 1)
         root.addLayout(target)
 
@@ -117,6 +119,45 @@ class AddAttrDialog(QDialog):
         buttons.rejected.connect(self.reject)
         buttons_row.addWidget(buttons)
         root.addLayout(buttons_row)
+
+    def _populate_group_combo(self):
+        self.group_combo.blockSignals(True)
+        self.group_combo.clear()
+        for index, group in enumerate(self.groups):
+            if group.reference_namespace is not None:
+                continue
+            self.group_combo.addItem(group.name, index)
+        self.group_combo.addItem(NEW_GROUP_LABEL, None)
+        if self.group_combo.count() > 1:
+            self.group_combo.setCurrentIndex(0)
+        self.group_combo.blockSignals(False)
+
+    def _on_group_combo_changed(self, _index):
+        if self.group_combo.currentData() is not None:
+            self._last_group_index = self.group_combo.currentIndex()
+            return
+        name, ok = QInputDialog.getText(self, "New Group", "Group name:", text="Group {}".format(len(self.groups) + 1))
+        if not ok or not name.strip():
+            self.group_combo.setCurrentIndex(max(self._last_group_index, 0))
+            return
+        group = AttrGroup(name.strip())
+        self.groups.append(group)
+        self._created_group = group
+        new_index = len(self.groups) - 1
+        insert_at = self.group_combo.count() - 1
+        self.group_combo.blockSignals(True)
+        self.group_combo.insertItem(insert_at, group.name, new_index)
+        self.group_combo.setCurrentIndex(insert_at)
+        self.group_combo.blockSignals(False)
+        self._last_group_index = insert_at
+
+    def reject(self):
+        if self._created_group is not None and not self._created_group.entries:
+            try:
+                self.groups.remove(self._created_group)
+            except ValueError:
+                pass
+        super().reject()
 
     def refresh_channel_box(self):
         self.channel_list.clear()
