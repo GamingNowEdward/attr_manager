@@ -120,7 +120,7 @@ class Config:
         try:
             value = json.loads(raw)
             return cls.from_dict(value) if isinstance(value, dict) else None
-        except (TypeError, ValueError, KeyError):
+        except Exception:
             return None
 
     def normalise_orders(self) -> None:

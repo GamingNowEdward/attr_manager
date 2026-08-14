@@ -14,7 +14,7 @@ if SCRIPT_DIR not in sys.path:
 def reload_modules():
     """Reload the package during Maya tool development."""
     names = [
-        "core.attr_data", "core.scene_io", "core.channel_box",
+        "core.attr_data", "core.scene_io", "core.channel_box", "core.merge",
         "ui.styles", "ui.attr_row_widget", "ui.group_section", "ui.add_attr_dialog", "ui.main_window",
     ]
     for name in names:

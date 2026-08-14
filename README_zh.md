@@ -16,9 +16,17 @@ Maya 2024/2025 属性集合面板工具。将场景中常用属性聚合到一�
 - 撤销/重做同步：Ctrl+Z / Ctrl+Shift+Z 后面板数值自动刷新
 - 配置持久化：存储在场景内 `attrManager` network 节点，随文件保存
 - 节点重命名后通过 UUID 自动恢复引用
-- 引用文件支持：被引用场景的 `attrManager` 配置以只读方式展示（分组、斜体行、禁止拖拽）；编辑引用属性时会在**原位创建覆写**——条目保持在原分组、显示 `override` 标记，点击 × 可移除覆写并恢复只读条目
+- 引用文件支持：被引用场景的 `attrManager` 配置以只读方式展示（分组、斜体行、禁止拖拽）；编辑引用属性时会在**原位创建覆写**——条目保持在原分组、显示 `override` 标记，点击 × 可移除覆写并恢复只读条目。创建/加载/卸载引用或导入文件时，面板会自动重新读取配置
 - 主场景中指向引用节点的条目（如手动添加的 Translate Z）同样显示 `override` 标记
 - 高性能：配置保存 300ms 防抖；滑块拖动合并为单个撤销步骤
+
+## 测试
+
+纯 Python 单元测试，覆盖数据模型、JSON 序列化与合并/保存往返逻辑（无需 Maya 或 PySide6）：
+
+```bash
+python -m unittest discover -s tests
+```
 
 ## 快速开始
 
@@ -53,8 +61,12 @@ attributeManager_maya/
 ├── __init__.py            # 包导出（launch/reload_modules）
 ├── core/
 │   ├── attr_data.py       # 数据模型 + JSON 序列化
+│   ├── merge.py           # 显示/保存合并变换（纯 Python）
 │   ├── scene_io.py        # 场景节点读写
 │   └── channel_box.py     # Channel Box 查询 + Last Lock Attr 钩子
+├── tests/
+│   ├── test_attr_data.py      # 序列化往返测试
+│   └── test_merge_roundtrip.py # 合并/保存往返测试
 └── ui/
     ├── main_window.py     # Dockable 主窗口
     ├── group_section.py   # 分组 + 拖拽

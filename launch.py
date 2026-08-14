@@ -22,13 +22,22 @@ _saved_window = None
 if "ui.main_window" in sys.modules:
     _saved_window = getattr(sys.modules["ui.main_window"], "_window", None)
 
-# Remove any previously registered MCommandMessage hook BEFORE reloading the
-# module: the old callback survives in the OpenMaya layer and would leak
+# Remove any previously registered OpenMaya callbacks BEFORE reloading the
+# modules: old callbacks survive in the OpenMaya layer and would leak
 # (writing into the old module's globals that the reloaded module can't see).
+# This covers the MCommandMessage hook (core.channel_box) and the
+# MSceneMessage reference/import callbacks (ui.main_window).
 for _mod_name in list(sys.modules.keys()):
     if _mod_name == "core.channel_box":
         try:
             _hook = getattr(sys.modules[_mod_name], "disable_command_hook", None)
+            if _hook is not None:
+                _hook()
+        except Exception:
+            pass
+    elif _mod_name == "ui.main_window":
+        try:
+            _hook = getattr(sys.modules[_mod_name], "_disable_scene_message_callbacks", None)
             if _hook is not None:
                 _hook()
         except Exception:

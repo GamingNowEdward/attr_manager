@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import maya.api.OpenMaya as om2
 import maya.cmds as cmds
 import maya.OpenMayaUI as omui
 import maya.utils as m_utils
@@ -23,6 +24,7 @@ except ImportError:
 
 from core.attr_data import AttrGroup, Config, resolve_entries
 from core.channel_box import enable_command_hook, disable_command_hook, unlock_attr
+from core.merge import collect_for_save, merge_for_display
 from core.scene_io import load_config, save_config
 from ui.add_attr_dialog import AddAttrDialog
 from ui.group_section import GroupSection, GROUP_MIME_TYPE
@@ -40,6 +42,48 @@ except ImportError:
 WINDOW_OBJECT_NAME = "attributeManagerMayaMainWindow"
 
 _active_jobs = []
+_scene_callbacks = []
+
+
+def _enable_scene_message_callbacks(window):
+    """Register MSceneMessage callbacks so reference/import changes re-read the config.
+
+    There is NO scriptJob event for reference changes ("referenceStateChanged"
+    does not exist in Maya 2024 — the scriptJob call raises), so the OpenMaya
+    API 2.0 message callbacks are used instead (same pattern as the command
+    hook in core/channel_box.py). The enum constants differ across Maya
+    builds (e.g. kAfterReferenceEdit does not exist in Maya 2024's API 2.0),
+    so each one is probed with getattr and silently skipped when missing.
+    """
+    global _scene_callbacks
+    if _scene_callbacks:
+        return
+    message_names = (
+        "kAfterReference",
+        "kAfterReferenceEdit",
+        "kAfterLoadReference",
+        "kAfterUnloadReference",
+        "kAfterImport",
+    )
+    for name in message_names:
+        msg = getattr(om2.MSceneMessage, name, None)
+        if msg is None:
+            continue
+        try:
+            _scene_callbacks.append(om2.MSceneMessage.addCallback(msg, window._schedule_reload))
+        except Exception:
+            pass
+
+
+def _disable_scene_message_callbacks():
+    """Remove all registered MSceneMessage callbacks (safe to call repeatedly)."""
+    global _scene_callbacks
+    for cb in _scene_callbacks:
+        try:
+            om2.MMessage.removeCallback(cb)
+        except Exception:
+            pass
+    _scene_callbacks = []
 
 
 class GroupContainer(QWidget):
@@ -133,6 +177,10 @@ class AttrManagerWindow(MayaQWidgetDockableMixin, QMainWindow):
         self._save_timer.setSingleShot(True)
         self._save_timer.setInterval(300)
         self._save_timer.timeout.connect(self._save_timeout)
+        self._reload_timer = QTimer(self)
+        self._reload_timer.setSingleShot(True)
+        self._reload_timer.setInterval(150)
+        self._reload_timer.timeout.connect(self._deferred_load)
         self._build()
         self._create_jobs()
         self.load_scene_config()
@@ -184,17 +232,27 @@ class AttrManagerWindow(MayaQWidgetDockableMixin, QMainWindow):
 
     def _create_jobs(self):
         enable_command_hook()
+        _enable_scene_message_callbacks(self)
         self.script_jobs.append(cmds.scriptJob(event=["SceneOpened", self._deferred_load], protected=True))
         self.script_jobs.append(cmds.scriptJob(event=["Undo", self._deferred_refresh], protected=True))
         self.script_jobs.append(cmds.scriptJob(event=["Redo", self._deferred_refresh], protected=True))
         global _active_jobs
         _active_jobs = list(self.script_jobs)
 
+    def _schedule_reload(self, *args, **kwargs):
+        # Reference create/load/unload fires scene messages several times
+        # mid-operation; debounce so the config is re-read once, after the
+        # reference has settled.
+        if not isValid(self):
+            return
+        self._reload_timer.start()
+
     def _deferred_load(self):
         m_utils.executeDeferred(self._load_guard, lowPriority=True)
 
     def _load_guard(self, *args, **kwargs):
-        self.load_scene_config()
+        if isValid(self):
+            self.load_scene_config()
 
     def _deferred_refresh(self):
         m_utils.executeDeferred(self._refresh_guard, lowPriority=True)
@@ -213,42 +271,7 @@ class AttrManagerWindow(MayaQWidgetDockableMixin, QMainWindow):
         self._apply_merged(load_config())
 
     def _apply_merged(self, merged_config):
-        self.config = merged_config
-        self._main_groups = [g for g in merged_config.groups if g.reference_namespace is None]
-        self._ref_groups = [g for g in merged_config.groups if g.reference_namespace is not None]
-
-        main_entries = {}
-        for group in self._main_groups:
-            for entry in group.entries:
-                key = (entry.node_uuid or entry.node_path, entry.attr)
-                main_entries.setdefault(key, []).append(entry)
-
-        merged_ref_groups = []
-        shown_main_keys = set()
-        for ref_group in self._ref_groups:
-            merged_entries = []
-            for entry in ref_group.entries:
-                key = (entry.node_uuid or entry.node_path, entry.attr)
-                if key in main_entries:
-                    merged_entries.append(main_entries[key][0])
-                    shown_main_keys.add(key)
-                else:
-                    merged_entries.append(entry)
-            if merged_entries:
-                ref_group.entries = merged_entries
-                merged_ref_groups.append(ref_group)
-
-        visible_groups = []
-        for group in self._main_groups:
-            remaining = [e for e in group.entries
-                         if (e.node_uuid or e.node_path, e.attr) not in shown_main_keys]
-            if group.entries and not remaining:
-                continue
-            group.entries = remaining
-            visible_groups.append(group)
-        visible_groups.extend(merged_ref_groups)
-
-        self.config.groups = visible_groups
+        self.config = merge_for_display(merged_config)
         self._update_snap_buttons()
         self.rebuild()
 
@@ -397,26 +420,7 @@ class AttrManagerWindow(MayaQWidgetDockableMixin, QMainWindow):
             pass
 
     def _do_save(self):
-        main_groups = []
-        for group in self.config.groups:
-            if group.reference_namespace is None:
-                main_groups.append(group)
-            else:
-                overrides = [e for e in group.entries if not e.is_referenced]
-                if overrides:
-                    main_groups.append(AttrGroup(
-                        name=group.name,
-                        order=group.order,
-                        collapsed=False,
-                        entries=overrides,
-                    ))
-        main_config = Config(
-            version=self.config.version,
-            slider_float_precision=self.config.slider_float_precision,
-            groups=main_groups,
-        )
-        main_config.normalise_orders()
-        ok = save_config(main_config)
+        ok = save_config(collect_for_save(self.config))
         if not ok:
             cmds.warning("Attribute Manager: failed to save configuration to scene.")
 
@@ -424,7 +428,10 @@ class AttrManagerWindow(MayaQWidgetDockableMixin, QMainWindow):
         if self._save_timer.isActive():
             self._save_timer.stop()
             self._do_save()
+        if self._reload_timer.isActive():
+            self._reload_timer.stop()
         disable_command_hook()
+        _disable_scene_message_callbacks()
         for job in self.script_jobs:
             try:
                 if cmds.scriptJob(exists=job):
@@ -460,7 +467,7 @@ def _kill_stale_jobs():
         jobs = cmds.scriptJob(listJobs=True) or []
     except Exception:
         return
-    tokens = (WINDOW_OBJECT_NAME, AttrManagerWindow.__name__, "_deferred_load", "_deferred_refresh")
+    tokens = (WINDOW_OBJECT_NAME, AttrManagerWindow.__name__, "_deferred_load", "_deferred_refresh", "_schedule_reload")
     for job in jobs:
         if not any(tok in job for tok in tokens):
             continue
@@ -503,6 +510,15 @@ LEGACY_WORKSPACE_NAME = "attrManagerMainWindowWorkspaceControl"
 def _attach_to_workspace(window, workspace):
     """Attach the window to an existing workspace control, preserving its layout."""
     try:
+        # If the control was closed via its dock X, attaching while closed
+        # silently hides the window inside it — the relaunched panel flashes
+        # and vanishes (and the attach still "succeeds"). Restore (reopen)
+        # the control first; if that fails, bail out so launch() falls back
+        # to rebuilding the control from scratch.
+        try:
+            cmds.workspaceControl(workspace, edit=True, restore=True)
+        except Exception:
+            return False
         window.show()
         for _ in range(20):
             QApplication.processEvents()

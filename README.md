@@ -16,9 +16,17 @@ A dockable attribute collection panel for Maya 2024/2025. Aggregates frequently 
 - Undo/redo sync: panel values auto-refresh after Ctrl+Z / Ctrl+Shift+Z
 - Config persistence: stored on a locked `attrManager` network node in the scene
 - UUID-based node resolution survives renames and reparenting
-- Reference support: referenced scenes' `attrManager` configs display read-only (grouped, italic rows, drag/drop blocked); editing a referenced attribute creates an **in-place override** — the row stays in its original group, gains an `override` badge, and can be removed with the × button to restore the read-only entry
+- Reference support: referenced scenes' `attrManager` configs display read-only (grouped, italic rows, drag/drop blocked); editing a referenced attribute creates an **in-place override** — the row stays in its original group, gains an `override` badge, and can be removed with the × button to restore the read-only entry. The panel re-reads configs automatically when references are created/loaded/unloaded and when files are imported
 - Main-scene entries pointing at referenced nodes (e.g. Translate Z added manually) also show the `override` badge
 - Performance: 300ms debounced config saves; slider drags collapse into a single undo step
+
+## Testing
+
+Pure-Python unit tests covering the data model, JSON serialisation and the merge/collect round trips (no Maya or PySide6 required):
+
+```bash
+python -m unittest discover -s tests
+```
 
 ## Quick Start
 
@@ -53,8 +61,12 @@ attributeManager_maya/
 ├── __init__.py            # Package re-exports (launch/reload_modules)
 ├── core/
 │   ├── attr_data.py       # Data model + JSON serialisation
+│   ├── merge.py           # Display/persist merge transforms (pure Python)
 │   ├── scene_io.py        # Scene node read/write
 │   └── channel_box.py     # Channel Box queries + Last Lock Attr hook
+├── tests/
+│   ├── test_attr_data.py      # Serialisation round-trip tests
+│   └── test_merge_roundtrip.py # Merge/collect round-trip tests
 └── ui/
     ├── main_window.py     # Dockable main window
     ├── group_section.py   # Groups + drag-drop
