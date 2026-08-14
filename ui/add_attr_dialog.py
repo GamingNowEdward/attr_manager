@@ -107,8 +107,8 @@ class AddAttrDialog(QDialog):
         root.addLayout(type_row)
 
         buttons_row = QHBoxLayout()
-        last_attr_btn = QPushButton("+ Last Attr")
-        last_attr_btn.setToolTip("Fill plug from the most recent setAttr in Script Editor")
+        last_attr_btn = QPushButton("+ Last Lock Attr")
+        last_attr_btn.setToolTip("Fill plug from the most recent Lock gesture on an Attribute Editor attribute")
         last_attr_btn.clicked.connect(self._fill_last_attr)
         buttons_row.addWidget(last_attr_btn)
         buttons_row.addStretch()
@@ -147,7 +147,7 @@ class AddAttrDialog(QDialog):
     def _fill_last_attr(self):
         result = get_last_set_attr()
         if not result:
-            cmds.warning("Attribute Manager: no recent setAttr found in Script Editor.")
+            cmds.warning("Attribute Manager: no recent Lock gesture found. Right-click an attribute in the Attribute Editor and choose Lock.")
             return
         node, attr = result
         self.manual_mode.setChecked(True)

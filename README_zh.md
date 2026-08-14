@@ -5,7 +5,7 @@ Maya 2024/2025 属性集合面板工具。将场景中常用属性聚合到一�
 ## 功能
 
 - 从 Channel Box 或手动输入添加属性（自动搜索 Shape 节点）
-- "+ Last Attr" 快捷按钮：自动读取最近一次修改的属性（面板修改、MEL/Attribute Editor 右键操作（通过全局命令回调捕获，不依赖 Script Editor）、或 Script Editor 日志）。在 Attribute Editor 中右键属性选择 **Lock** 可作为"添加到 Attribute Manager"手势——属性会被记录为 Last Attr，且仅在通过 Add 对话框实际添加时才自动解锁（不会干扰真实的锁定操作）
+- "+ Last Lock Attr" 快捷按钮：填充最近一次 **Lock 手势**对应的属性——在 Attribute Editor 中右键属性选择 **Lock** 即可记录（全局命令回调捕获 `setAttr -lock` 命令，不依赖 Script Editor）。属性保持锁定，仅在通过 Add 对话框实际添加时才自动解锁（不会干扰真实的锁定操作）
 - 属性按类型自动匹配控件：Slider+SpinBox / CheckBox / ComboBox / 色块按钮
 - 显示类型可选：Auto / Number / Color，颜色属性点击打开 Maya 色板
 - 自定义 Slider 范围：右键滑块 → Set Min/Max/Range/Reset（范围围绕当前值自动生成）
@@ -54,7 +54,7 @@ attributeManager_maya/
 ├── core/
 │   ├── attr_data.py       # 数据模型 + JSON 序列化
 │   ├── scene_io.py        # 场景节点读写
-│   └── channel_box.py     # Channel Box 查询 + Last Attr
+│   └── channel_box.py     # Channel Box 查询 + Last Lock Attr 钩子
 └── ui/
     ├── main_window.py     # Dockable 主窗口
     ├── group_section.py   # 分组 + 拖拽

@@ -59,7 +59,7 @@ def _on_command(command_string, client_data=None):
     the MEL channel (MEL scripts, Attribute Editor right-click actions such
     as Lock, which echoes ``setAttr "-l" 1 {"node.attr"};``) but NOT for
     Python ``cmds`` calls, so panel edits still rely on ``record_set_attr``.
-    A right-click Lock is recorded for "+ Last Attr" but left locked — it is
+    A right-click Lock is recorded for "+ Last Lock Attr" but left locked — it is
     only unlocked when the attribute is actually added via the Add dialog.
     """
     if not _hook_enabled:
@@ -116,20 +116,4 @@ def _parse_set_attr_line(line: str) -> Optional[Tuple[str, str]]:
 
 
 def get_last_set_attr() -> Optional[Tuple[str, str]]:
-    global _last_set_attr
-    if _last_set_attr:
-        return _last_set_attr
-    try:
-        history = mel.eval("scrollField -q -text $gCommandReporter;")
-        if not history:
-            return None
-    except Exception:
-        return None
-    for line in reversed(history.strip().split("\n")):
-        line = line.strip()
-        if not line or line.startswith("#") or line.startswith("//"):
-            continue
-        result = _parse_set_attr_line(line)
-        if result:
-            return result
-    return None
+    return _last_set_attr
