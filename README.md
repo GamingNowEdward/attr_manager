@@ -5,7 +5,7 @@ A dockable attribute collection panel for Maya 2024/2025. Aggregates frequently 
 ## Features
 
 - Add attributes from Channel Box or manual plug input (auto-searches Shape nodes)
-- "+ Last Attr" quick button: auto-fills the plug from the most recently modified attribute (panel edits or Script Editor log)
+- "+ Last Attr" quick button: auto-fills the plug from the most recently modified attribute (panel edits, MEL/Attribute Editor right-click actions via a global command hook, or Script Editor log). Right-click "Lock" on an Attribute Editor attribute acts as an "add to Attribute Manager" gesture — the attribute is recorded, and unlocked when actually added through the Add dialog (locking itself is never hijacked).
 - Auto-matched controls by type: Slider+SpinBox / CheckBox / ComboBox / Color swatch
 - Display type override: Auto / Number / Color; color attributes open Maya's color editor
 - Custom slider range: right-click the slider → Set Min/Max/Range/Reset (default range wraps the current value)

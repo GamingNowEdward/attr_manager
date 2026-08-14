@@ -22,6 +22,7 @@ except ImportError:
     from shiboken2 import isValid, wrapInstance
 
 from core.attr_data import AttrGroup, Config, resolve_entries
+from core.channel_box import enable_command_hook, disable_command_hook, unlock_attr
 from core.scene_io import load_config, save_config
 from ui.add_attr_dialog import AddAttrDialog
 from ui.group_section import GroupSection, GROUP_MIME_TYPE
@@ -182,6 +183,7 @@ class AttrManagerWindow(MayaQWidgetDockableMixin, QMainWindow):
         layout.addWidget(self.scroll)
 
     def _create_jobs(self):
+        enable_command_hook()
         self.script_jobs.append(cmds.scriptJob(event=["SceneOpened", self._deferred_load], protected=True))
         self.script_jobs.append(cmds.scriptJob(event=["Undo", self._deferred_refresh], protected=True))
         self.script_jobs.append(cmds.scriptJob(event=["Redo", self._deferred_refresh], protected=True))
@@ -319,6 +321,10 @@ class AttrManagerWindow(MayaQWidgetDockableMixin, QMainWindow):
                 entry.order = len(group.entries)
                 group.entries.append(entry)
                 existing.add(key)
+            # A right-click "Lock" on an Attribute Editor attribute is the
+            # "add to Attribute Manager" gesture: the plug was recorded while
+            # staying locked, so unlock it now that the add is confirmed.
+            unlock_attr(entry.node_path, entry.attr)
         self.rebuild()
         self.save()
 
@@ -418,6 +424,7 @@ class AttrManagerWindow(MayaQWidgetDockableMixin, QMainWindow):
         if self._save_timer.isActive():
             self._save_timer.stop()
             self._do_save()
+        disable_command_hook()
         for job in self.script_jobs:
             try:
                 if cmds.scriptJob(exists=job):
