@@ -37,15 +37,23 @@ def record_set_attr(node: str, attr: str):
 
 
 def _parse_set_attr_line(line: str) -> Optional[Tuple[str, str]]:
-    """Extract (node, attr) from a MEL setAttr echo line, or None."""
-    match = re.search(
-        r'setAttr\s+"?([a-zA-Z0-9_:|]+\.[a-zA-Z0-9_]+)"?\s*(?:-type\s+\w+\s+)?[-0-9\.]*', line
-    )
-    if not match:
+    """Extract (node, attr) from a MEL setAttr echo line, or None.
+
+    Maya echoes ``setAttr`` with ``-type`` either before the plug
+    (``setAttr -type double3 "pCube1.color" 1 2 3;``) or after it, so the
+    plug is located by token scan rather than a fixed-position regex.
+    """
+    tokens = re.findall(r'"[^"]*"|\S+', line.strip())
+    if not tokens or tokens[0] != "setAttr":
         return None
-    plug = match.group(1)
-    node, attr = plug.rsplit(".", 1)
-    return node, attr
+    for token in tokens[1:]:
+        if token.startswith("-"):
+            continue
+        plug = token.strip('";')
+        if "." in plug and not plug.startswith(".") and not plug.endswith("."):
+            node, attr = plug.rsplit(".", 1)
+            return node, attr
+    return None
 
 
 def get_last_set_attr() -> Optional[Tuple[str, str]]:
