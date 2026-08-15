@@ -507,7 +507,7 @@ def _set_panel_visibility_callback(workspace):
 LEGACY_WORKSPACE_NAME = "attrManagerMainWindowWorkspaceControl"
 
 
-def _purge_stray_workspace_widgets():
+def _purge_stray_workspace_widgets(*args, **kwargs):
     """Close stray blank workspace-control windows restored by Maya.
 
     The legacy floating control (see LEGACY_WORKSPACE_NAME) can be restored
