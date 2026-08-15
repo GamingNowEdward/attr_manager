@@ -1,7 +1,7 @@
 # Attribute Manager — Agent Guide
 
 ## What This Is
-A dockable Maya 2024/2025 panel (Python 3 + PySide6) that aggregates scene attributes into grouped, draggable, editable rows. Config persists inside the scene file on a locked `network` node named `attrManager`. Referenced scenes' configs are displayed read-only, with per-scene overrides supported in place.
+A dockable Maya 2024.2 panel (Python 3 + PySide6) that aggregates scene attributes into grouped, draggable, editable rows. Tested on Maya 2024.2 only — other Maya versions are untested. Config persists inside the scene file on a locked `network` node named `attrManager`. Referenced scenes' configs are displayed read-only, with per-scene overrides supported in place.
 
 ## Running
 No build step. In Maya Script Editor:

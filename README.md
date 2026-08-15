@@ -1,6 +1,6 @@
 # Attribute Manager
 
-A dockable attribute collection panel for Maya 2024/2025. Aggregates frequently used scene attributes into one panel with grouped management, drag-and-drop reordering, and per-scene persistence.
+A dockable attribute collection panel for Maya 2024.2. Aggregates frequently used scene attributes into one panel with grouped management, drag-and-drop reordering, and per-scene persistence.
 
 ## Features
 
@@ -48,8 +48,8 @@ The panel docks to Maya's right side. Each call hot-reloads all modules for deve
 
 ## Requirements
 
-- Maya 2024 / 2025 (Python 3 + PySide6)
-- Compatible with Maya 2022/2023 (PySide2 fallback)
+- Maya 2024.2 (Python 3 + PySide6)
+- **Tested on Maya 2024.2 only. Other Maya versions are not tested — please test them yourself.**
 
 ## Project Structure
 

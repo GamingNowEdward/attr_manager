@@ -1,6 +1,6 @@
 # Attribute Manager
 
-Maya 2024/2025 属性集合面板工具。将场景中常用属性聚合到一个可停靠面板，支持快速调节、分组管理、拖拽排序，配置随场景保存。
+Maya 2024.2 属性集合面板工具。将场景中常用属性聚合到一个可停靠面板，支持快速调节、分组管理、拖拽排序，配置随场景保存。
 
 ## 功能
 
@@ -48,8 +48,8 @@ __file__ = r"PATH_TO\launch.py"; exec(compile(open(__file__).read(), __file__, "
 
 ## 环境要求
 
-- Maya 2024 / 2025（Python 3 + PySide6）
-- 兼容 Maya 2022/2023（PySide2 fallback）
+- Maya 2024.2（Python 3 + PySide6）
+- **仅在 Maya 2024.2 上测试过，其他 Maya 版本未经测试，请自行测试**
 
 ## 项目结构
 

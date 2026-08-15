@@ -507,6 +507,47 @@ def _set_panel_visibility_callback(workspace):
 LEGACY_WORKSPACE_NAME = "attrManagerMainWindowWorkspaceControl"
 
 
+def _purge_stray_workspace_widgets():
+    """Close stray blank workspace-control windows restored by Maya.
+
+    The legacy floating control (see LEGACY_WORKSPACE_NAME) can be restored
+    by Maya AFTER launch() has already run (workspace layout restores before
+    the floating-window list), so a delete-only-in-launch strategy misses it.
+    Blank workspace windows that are not the panel are torn down here.
+    """
+    try:
+        from PySide6.QtWidgets import QApplication as _App
+    except ImportError:
+        from PySide2.QtWidgets import QApplication as _App
+    for widget in _App.topLevelWidgets():
+        if widget.property("WorkspaceZOrderWidgetID") is None:
+            continue
+        name = widget.objectName()
+        if name in (WINDOW_OBJECT_NAME, WINDOW_OBJECT_NAME + "WorkspaceControl"):
+            continue
+        if widget.windowTitle().strip():
+            continue
+        try:
+            widget.deleteLater()
+        except Exception:
+            pass
+
+
+def _delete_legacy_workspace(*args, **kwargs):
+    """Delete the legacy workspace control, retried after Maya's window
+    restore runs so a late-restored floating legacy control is still caught.
+    Also purges any stray blank workspace widgets as a Qt-level fallback."""
+    try:
+        if cmds.workspaceControl(LEGACY_WORKSPACE_NAME, exists=True):
+            cmds.deleteUI(LEGACY_WORKSPACE_NAME, control=True)
+    except Exception:
+        pass
+    try:
+        _purge_stray_workspace_widgets()
+    except Exception:
+        pass
+
+
 def _attach_to_workspace(window, workspace):
     """Attach the window to an existing workspace control, preserving its layout."""
     try:
@@ -527,9 +568,15 @@ def _attach_to_workspace(window, workspace):
         if wc_ptr is None or win_ptr is None:
             return False
         omui.MQtUtil.addWidgetToMayaLayout(int(win_ptr), int(wc_ptr))
+        # The reparenting can lag behind during Maya's session-restore flow, so
+        # poll instead of failing immediately (a false failure falls back to
+        # re-floating the window, which leaks a blank floating container).
+        parent = None
         for _ in range(20):
             QApplication.processEvents()
-        parent = window.parentWidget()
+            parent = window.parentWidget()
+            if parent is not None and parent.objectName() == workspace:
+                break
         if parent is None or parent.objectName() != workspace:
             return False
         _set_panel_visibility_callback(workspace)
@@ -573,11 +620,10 @@ def launch(dockable=True):
     global _window
     _kill_stale_jobs()
     workspace = WINDOW_OBJECT_NAME + "WorkspaceControl"
-    if cmds.workspaceControl(LEGACY_WORKSPACE_NAME, exists=True):
-        try:
-            cmds.deleteUI(LEGACY_WORKSPACE_NAME, control=True)
-        except Exception:
-            pass
+    # Delete the legacy control immediately AND after Maya finishes restoring
+    # the floating-window list (which can recreate it after this function runs).
+    _delete_legacy_workspace()
+    m_utils.executeDeferred(_delete_legacy_workspace, lowPriority=False)
     for widget in QApplication.topLevelWidgets():
         if widget.objectName() == WINDOW_OBJECT_NAME:
             try:
@@ -599,6 +645,7 @@ def launch(dockable=True):
                 _window.show(dockable=True, area="right", floating=False)
                 _set_ui_script(workspace)
                 _set_panel_visibility_callback(workspace)
+            m_utils.executeDeferred(_purge_stray_workspace_widgets, lowPriority=False)
         else:
             _window.show()
         return _window
@@ -609,6 +656,7 @@ def launch(dockable=True):
         _window.show(dockable=True, area="right", floating=False)
         _set_ui_script(workspace)
         _set_panel_visibility_callback(workspace)
+        m_utils.executeDeferred(_purge_stray_workspace_widgets, lowPriority=False)
     else:
         _window.show()
     return _window
