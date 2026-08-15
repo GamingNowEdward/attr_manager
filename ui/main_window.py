@@ -11,18 +11,18 @@ try:
     from PySide6.QtCore import Qt, QTimer
     from PySide6.QtGui import QPainter, QPen, QColor
     from PySide6.QtWidgets import (QApplication, QHBoxLayout, QInputDialog,
-                                   QMainWindow, QMessageBox, QPushButton,
+                                   QMessageBox, QPushButton,
                                    QScrollArea, QVBoxLayout, QWidget)
     from shiboken6 import isValid, wrapInstance
 except ImportError:
     from PySide2.QtCore import Qt, QTimer
     from PySide2.QtGui import QPainter, QPen, QColor
     from PySide2.QtWidgets import (QApplication, QHBoxLayout, QInputDialog,
-                                   QMainWindow, QMessageBox, QPushButton,
+                                   QMessageBox, QPushButton,
                                    QScrollArea, QVBoxLayout, QWidget)
     from shiboken2 import isValid, wrapInstance
 
-from core.attr_data import AttrGroup, Config, resolve_entries
+from core.attr_data import AttrGroup, Config
 from core.channel_box import enable_command_hook, disable_command_hook, unlock_attr
 from core.merge import collect_for_save, merge_for_display
 from core.scene_io import load_config, save_config
@@ -61,6 +61,9 @@ def _enable_scene_message_callbacks(window):
     message_names = (
         "kAfterReference",
         "kAfterReferenceEdit",
+        "kAfterCreateReference",
+        "kAfterImportReference",
+        "kAfterRemoveReference",
         "kAfterLoadReference",
         "kAfterUnloadReference",
         "kAfterImport",
@@ -162,7 +165,7 @@ def maya_main_window():
     return wrapInstance(int(omui.MQtUtil.mainWindow()), QWidget)
 
 
-class AttrManagerWindow(MayaQWidgetDockableMixin, QMainWindow):
+class AttrManagerWindow(MayaQWidgetDockableMixin, QWidget):
     def __init__(self, parent=None):
         super().__init__(parent or maya_main_window())
         self.setObjectName(WINDOW_OBJECT_NAME)
@@ -186,9 +189,7 @@ class AttrManagerWindow(MayaQWidgetDockableMixin, QMainWindow):
         self.load_scene_config()
 
     def _build(self):
-        central = QWidget()
-        self.setCentralWidget(central)
-        layout = QVBoxLayout(central)
+        layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         toolbar_widget = QWidget()
@@ -403,8 +404,9 @@ class AttrManagerWindow(MayaQWidgetDockableMixin, QMainWindow):
         self.save()
 
     def refresh(self):
-        resolve_entries(self.config)
-        self.rebuild()
+        """Re-read the scene config, picking up reference namespace changes."""
+        self._do_save()
+        self.load_scene_config()
 
     def save(self):
         self._save_timer.start()
@@ -490,7 +492,7 @@ def _set_panel_visibility_callback(workspace):
             return
         try:
             if visible:
-                _window.load_scene_config()
+                _window._schedule_reload()
             else:
                 timer = getattr(_window, "_save_timer", None)
                 if timer is not None and timer.isActive():
@@ -548,72 +550,91 @@ def _delete_legacy_workspace(*args, **kwargs):
         pass
 
 
-def _attach_to_workspace(window, workspace):
-    """Attach the window to an existing workspace control, preserving its layout."""
-    try:
-        # If the control was closed via its dock X, attaching while closed
-        # silently hides the window inside it — the relaunched panel flashes
-        # and vanishes (and the attach still "succeeds"). Restore (reopen)
-        # the control first; if that fails, bail out so launch() falls back
-        # to rebuilding the control from scratch.
-        try:
-            cmds.workspaceControl(workspace, edit=True, restore=True)
-        except Exception:
-            return False
-        window.show()
-        for _ in range(20):
-            QApplication.processEvents()
-        wc_ptr = omui.MQtUtil.findControl(workspace)
-        win_ptr = omui.MQtUtil.findControl(WINDOW_OBJECT_NAME)
-        if wc_ptr is None or win_ptr is None:
-            return False
-        omui.MQtUtil.addWidgetToMayaLayout(int(win_ptr), int(wc_ptr))
-        # The reparenting can lag behind during Maya's session-restore flow, so
-        # poll instead of failing immediately (a false failure falls back to
-        # re-floating the window, which leaks a blank floating container).
-        parent = None
-        for _ in range(20):
-            QApplication.processEvents()
-            parent = window.parentWidget()
-            if parent is not None and parent.objectName() == workspace:
-                break
-        if parent is None or parent.objectName() != workspace:
-            return False
-        _set_panel_visibility_callback(workspace)
-        return True
-    except Exception:
-        return False
-
-
 def _set_ui_script(workspace):
     """Let Maya rebuild the panel automatically when it restores this workspace control.
 
     The Python flavour of workspaceControl treats ``uiScript`` as Python code, so pass
     bare Python (no ``python("...")`` MEL wrapper); Maya wraps it when persisting.
     Forward slashes avoid backslash escaping through the MEL/JSON layers.
+
+    The script routes through ``_restore_from_ui_script`` (NOT ``exec launch.py``):
+    when Maya re-initialises the control mid-session (e.g. re-docking a torn-out
+    panel), the window is still alive and the script must NOT rebuild it — an
+    unconditional rebuild races Maya's layout operation and corrupts the window's
+    native QWindow (crash on the next tab switch). Only a real session restore
+    (no live window) rebuilds, deferred to Maya's idle time.
     """
     import os as _os
-    launch_path = _os.path.abspath(
-        _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "launch.py")
+    script_dir = _os.path.abspath(
+        _os.path.dirname(_os.path.abspath(__file__)) + "/.."
     ).replace("\\", "/")
     script = (
-        "__file__ = r'{path}'; exec(compile(open(__file__).read(), __file__, 'exec'))"
-    ).format(path=launch_path)
+        "import sys; sys.path.insert(0, r'{dir}'); "
+        "from ui.main_window import _restore_from_ui_script; "
+        "_restore_from_ui_script()"
+    ).format(dir=script_dir)
     try:
         cmds.workspaceControl(workspace, edit=True, uiScript=script)
     except Exception:
         pass
 
 
-def _restore_from_ui_script(*args, **kwargs):
-    """Called by Maya's workspace control uiScript when the session is restored."""
-    global _window
-    if _window is not None and isValid(_window):
-        return
+def _restore_guard(*args, **kwargs):
     try:
         launch(dockable=True)
     except Exception as exc:
         cmds.warning("Attribute Manager: session restore failed: {}".format(exc))
+
+
+def _restore_from_ui_script(*args, **kwargs):
+    """Called by Maya's workspace control uiScript when it (re)initialises the control.
+
+    If the panel window is still alive (re-dock of a live panel), do nothing —
+    rebuilding here races Maya's layout operation and corrupts the native window.
+    If there is no live window (Maya session restore), rebuild, deferred to idle
+    so the workspace layout has settled.
+    """
+    global _window
+    if _window is not None and isValid(_window):
+        return
+    try:
+        m_utils.executeDeferred(_restore_guard, lowPriority=True)
+    except Exception as exc:
+        cmds.warning("Attribute Manager: session restore failed: {}".format(exc))
+
+
+def _ensure_panel_width(window, workspace):
+    """Reset a docked panel to its minimum width so Maya's layout cache
+    does not lock the splitter at a larger width.
+
+    Maya caches the workspace control container's sizeHint at dock time (from
+    the retained layout record); that cached value becomes the splitter's
+    minimum, so a panel widened in a previous session cannot be shrunk again.
+    Cycling the control through floating (at 330px) and back into the dock
+    re-initialises the container at 330px. The uiScript is cleared first so
+    Maya does not rebuild the window mid-cycle, then restored.
+    """
+    if not isValid(window):
+        return
+    try:
+        page = window.parentWidget()
+        if page is None or page.minimumSizeHint().width() <= 340:
+            return
+    except Exception:
+        return
+    try:
+        cmds.workspaceControl(workspace, edit=True, floating=True)
+        for _ in range(10):
+            QApplication.processEvents()
+        cmds.workspaceControl(workspace, edit=True, resizeWidth=330, resizeHeight=420)
+        cmds.workspaceControl(workspace, edit=True, uiScript="")
+        cmds.workspaceControl(workspace, edit=True, dockToMainWindow=("right", False))
+        for _ in range(20):
+            QApplication.processEvents()
+        _set_ui_script(workspace)
+        _set_panel_visibility_callback(workspace)
+    except Exception:
+        pass
 
 
 def launch(dockable=True):
@@ -624,7 +645,9 @@ def launch(dockable=True):
     # the floating-window list (which can recreate it after this function runs).
     _delete_legacy_workspace()
     m_utils.executeDeferred(_delete_legacy_workspace, lowPriority=False)
-    for widget in QApplication.topLevelWidgets():
+    for widget in QApplication.allWidgets():
+        if not isValid(widget):
+            continue
         if widget.objectName() == WINDOW_OBJECT_NAME:
             try:
                 timer = getattr(widget, "_save_timer", None)
@@ -635,20 +658,20 @@ def launch(dockable=True):
             widget.close()
             widget.deleteLater()
 
+    # Never reuse an existing workspace control: re-attaching a fresh window
+    # into a retained/restored container leaves Maya's layout unstable —
+    # tearing the panel out of a tab group and re-docking it accumulates
+    # Qt-internal corruption (QStackedLayout::takeAt / QWindow::screen crashes,
+    # verified in Maya 2024). Delete the old control entirely and rebuild fresh.
     if cmds.workspaceControl(workspace, exists=True):
-        cmds.workspaceControl(workspace, edit=True, close=True)
-        _window = AttrManagerWindow()
-        if dockable:
-            if not _attach_to_workspace(_window, workspace):
-                cmds.deleteUI(workspace, control=True)
-                _window.show(dockable=True, floating=True)
-                _window.show(dockable=True, area="right", floating=False)
-                _set_ui_script(workspace)
-                _set_panel_visibility_callback(workspace)
-            m_utils.executeDeferred(_purge_stray_workspace_widgets, lowPriority=False)
-        else:
-            _window.show()
-        return _window
+        try:
+            cmds.workspaceControl(workspace, edit=True, close=True)
+        except Exception:
+            pass
+        try:
+            cmds.deleteUI(workspace, control=True)
+        except Exception:
+            pass
 
     _window = AttrManagerWindow()
     if dockable:
@@ -656,6 +679,7 @@ def launch(dockable=True):
         _window.show(dockable=True, area="right", floating=False)
         _set_ui_script(workspace)
         _set_panel_visibility_callback(workspace)
+        _ensure_panel_width(_window, workspace)
         m_utils.executeDeferred(_purge_stray_workspace_widgets, lowPriority=False)
     else:
         _window.show()

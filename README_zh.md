@@ -16,9 +16,14 @@ Maya 2024.2 属性集合面板工具。将场景中常用属性聚合到一个�
 - 撤销/重做同步：Ctrl+Z / Ctrl+Shift+Z 后面板数值自动刷新
 - 配置持久化：存储在场景内 `attrManager` network 节点，随文件保存
 - 节点重命名后通过 UUID 自动恢复引用
-- 引用文件支持：被引用场景的 `attrManager` 配置以只读方式展示（分组、斜体行、禁止拖拽）；编辑引用属性时会在**原位创建覆写**——条目保持在原分组、显示 `override` 标记，点击 × 可移除覆写并恢复只读条目。创建/加载/卸载引用或导入文件时，面板会自动重新读取配置
+- 引用文件支持：被引用场景的 `attrManager` 配置以只读方式展示（组名/属性名带 `namespace:` 前缀、斜体行、禁止拖拽、禁止改名）；编辑引用属性时会在**原位创建覆写**——条目保持在原分组、显示 `override` 标记，点击 × 可移除覆写并恢复只读条目。创建/加载/卸载/移除引用或导入文件时，面板会自动重新读取配置；在 Reference Editor 中修改引用 namespace 不产生任何 Maya 事件，点击工具栏 Refresh 即可重读并更正前缀
 - 主场景中指向引用节点的条目（如手动添加的 Translate Z）同样显示 `override` 标记
-- 高性能：配置保存 300ms 防抖；滑块拖动合并为单个撤销步骤
+
+## 性能
+
+- 配置保存 300ms 防抖；滑块拖动合并为单个撤销步骤
+- Reference namespace 检测：创建/加载/卸载/移除引用及导入文件时由 MSceneMessage 事件驱动自动重新读取；Reference Editor 中修改引用 namespace 不产生任何 Maya 事件（`MNamespaceMessage` 不存在、`NameChanged` 不触发），需点击工具栏 Refresh 按钮重读场景配置（先落盘未保存修改再重读，前缀与引用组自动更正）
+- 无后台轮询定时器：面板不做任何周期查询，播放动画与交互期间零额外开销
 
 ## 测试
 
@@ -44,7 +49,7 @@ __file__ = r"PATH_TO\launch.py"; exec(compile(open(__file__).read(), __file__, "
 
 > **注意**：如果从 GitHub 下载 ZIP，解压后的文件夹名为 `attr_manager-main`。请相应调整路径。
 
-面板会停靠到 Maya 右侧。每次调用会自动热重载所有模块，方便开发迭代。
+面板会停靠到 Maya 右侧。每次调用会自动热重载所有模块，方便开发迭代。重启 Maya 后面板会自动恢复至原停靠位置（通过 workspace control 的 uiScript 机制）。
 
 ## 环境要求
 

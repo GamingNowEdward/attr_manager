@@ -213,11 +213,16 @@ class AttrRowWidget(QWidget):
         layout.setSpacing(4)
         layout.addWidget(DragHandle(self))
 
-        self.name_label = QLabel(self.entry.display_name)
+        display = self.entry.display_name
+        if (self.entry.is_referenced and self.group_section is not None
+                and self.group_section.group.reference_namespace):
+            display = "{}:{}".format(self.group_section.group.reference_namespace, display)
+        self.name_label = QLabel(display)
         self.name_label.setObjectName("nameLabel")
         self.name_label.setFixedHeight(20)
         self.name_label.setToolTip("{}.{}".format(self.entry.node_path, self.entry.attr))
-        self.name_label.mouseDoubleClickEvent = self._begin_rename
+        if not self.entry.is_referenced:
+            self.name_label.mouseDoubleClickEvent = self._begin_rename
         if self.entry.is_referenced:
             self.name_label.setStyleSheet("color: #888888; font-style: italic;")
         layout.addWidget(self.name_label)
@@ -612,6 +617,8 @@ class AttrRowWidget(QWidget):
         self.changed.emit()
 
     def _begin_rename(self, _event):
+        if self.entry.is_referenced:
+            return
         self.name_label.hide()
         self.name_edit.show()
         self.name_edit.setFocus()
@@ -626,6 +633,8 @@ class AttrRowWidget(QWidget):
             self._finish_rename()
 
     def _finish_rename(self):
+        if self.entry.is_referenced:
+            return
         if hasattr(self, "_focus_timer"):
             self._focus_timer.stop()
         name = self.name_edit.text().strip()

@@ -16,9 +16,14 @@ A dockable attribute collection panel for Maya 2024.2. Aggregates frequently use
 - Undo/redo sync: panel values auto-refresh after Ctrl+Z / Ctrl+Shift+Z
 - Config persistence: stored on a locked `attrManager` network node in the scene
 - UUID-based node resolution survives renames and reparenting
-- Reference support: referenced scenes' `attrManager` configs display read-only (grouped, italic rows, drag/drop blocked); editing a referenced attribute creates an **in-place override** — the row stays in its original group, gains an `override` badge, and can be removed with the × button to restore the read-only entry. The panel re-reads configs automatically when references are created/loaded/unloaded and when files are imported
+- Reference support: referenced scenes' `attrManager` configs display read-only (grouped, `namespace:`-prefixed names, italic rows, drag/drop and rename blocked); editing a referenced attribute creates an **in-place override** — the row stays in its original group, gains an `override` badge, and can be removed with the × button to restore the read-only entry. The panel re-reads configs automatically when references are created/loaded/unloaded/removed and when files are imported; renaming a reference's namespace fires no event, so use the toolbar Refresh button to re-read and correct the prefixes
 - Main-scene entries pointing at referenced nodes (e.g. Translate Z added manually) also show the `override` badge
-- Performance: 300ms debounced config saves; slider drags collapse into a single undo step
+
+## Performance
+
+- Config saves are 300ms debounced; slider drags collapse into a single undo step
+- Reference namespace detection: creating/loading/unloading/removing a reference and importing files re-read the config automatically via MSceneMessage events. Renaming a reference's namespace in the Reference Editor fires no Maya event at all (`MNamespaceMessage` does not exist in either Python API and `NameChanged` is not triggered), so use the toolbar Refresh button to re-read the scene config (pending saves are flushed first, then the config is reloaded and prefixes/ref groups correct themselves)
+- No background polling: the panel performs no periodic queries, so playback and interaction incur zero extra overhead
 
 ## Testing
 
@@ -44,7 +49,7 @@ __file__ = r"PATH_TO\launch.py"; exec(compile(open(__file__).read(), __file__, "
 
 > **Note**: If downloaded as ZIP from GitHub, the folder will be named `attr_manager-main`. Adjust the path accordingly.
 
-The panel docks to Maya's right side. Each call hot-reloads all modules for development iteration.
+The panel docks to Maya's right side. Each call hot-reloads all modules for development iteration. After restarting Maya, the panel automatically restores to its previous dock position (via the workspace control's uiScript mechanism).
 
 ## Requirements
 

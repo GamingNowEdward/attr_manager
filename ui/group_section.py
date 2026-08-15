@@ -178,7 +178,7 @@ class GroupTitleLabel(QLabel):
     @staticmethod
     def _make_title(section):
         if section.group.reference_namespace:
-            return "{} [{}]".format(section.group.name, section.group.reference_namespace)
+            return "{}:{}".format(section.group.reference_namespace, section.group.name)
         return section.group.name
 
     def mousePressEvent(self, event):
@@ -331,6 +331,8 @@ class GroupSection(QWidget):
         self.container.setVisible(not self.group.collapsed)
 
     def _begin_rename(self, _event):
+        if self.group.reference_namespace is not None:
+            return
         self.title.hide()
         self.edit.show()
         self.edit.setFocus()
@@ -345,6 +347,8 @@ class GroupSection(QWidget):
             self._finish_rename()
 
     def _finish_rename(self):
+        if self.group.reference_namespace is not None:
+            return
         if hasattr(self, "_focus_timer"):
             self._focus_timer.stop()
         name = self.edit.text().strip()
