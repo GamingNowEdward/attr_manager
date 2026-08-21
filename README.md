@@ -27,11 +27,13 @@ A dockable attribute collection panel for Maya 2024.2. Aggregates frequently use
 
 ## Testing
 
-Pure-Python unit tests covering the data model, JSON serialisation and the merge/collect round trips (no Maya or PySide6 required):
+The suite runs under Maya's `mayapy.exe` and drives the live kernel (scene I/O, references, command hooks):
 
 ```bash
-python -m unittest discover -s tests
+"C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe" -m unittest discover -s tests
 ```
+
+Coverage table and headless gotchas: see `tests/README.md`.
 
 ## Quick Start
 
@@ -44,7 +46,7 @@ python -m unittest discover -s tests
 Or manually run in Maya Script Editor:
 
 ```python
-__file__ = r"PATH_TO\launch.py"; exec(compile(open(__file__).read(), __file__, "exec"))
+__file__ = r"PATH_TO\launch.py"; __name__ = "__main__"; exec(compile(open(__file__).read(), __file__, "exec"))
 ```
 
 > **Note**: If downloaded as ZIP from GitHub, the folder will be named `attr_manager-main`. Adjust the path accordingly.
@@ -61,8 +63,7 @@ The panel docks to Maya's right side. Each call hot-reloads all modules for deve
 ```
 attributeManager_maya/
 ├── copy_to_clipboard.bat  # Auto-generate launch command
-├── launch.py              # Portable launcher
-├── attributeManager.py    # Entry point
+├── launch.py              # Single entry point (hot-reload + launch)
 ├── __init__.py            # Package re-exports (launch/reload_modules)
 ├── core/
 │   ├── attr_data.py       # Data model + JSON serialisation
@@ -70,8 +71,12 @@ attributeManager_maya/
 │   ├── scene_io.py        # Scene node read/write
 │   └── channel_box.py     # Channel Box queries + Last Lock Attr hook
 ├── tests/
-│   ├── test_attr_data.py      # Serialisation round-trip tests
-│   └── test_merge_roundtrip.py # Merge/collect round-trip tests
+│   ├── support.py                   # Shared harness (scene isolation, fixtures)
+│   ├── test_attr_data.py            # Serialisation + resolve_entries
+│   ├── test_merge.py                # Merge/collect behaviour matrix
+│   ├── test_scene_io.py             # Persistence / locks / undo footprint
+│   ├── test_channel_box.py          # setAttr parsing + command hook
+│   └── test_reference_integration.py # Reference lifecycle end-to-end
 └── ui/
     ├── main_window.py     # Dockable main window
     ├── group_section.py   # Groups + drag-drop

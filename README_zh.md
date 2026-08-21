@@ -27,11 +27,13 @@ Maya 2024.2 属性集合面板工具。将场景中常用属性聚合到一个�
 
 ## 测试
 
-纯 Python 单元测试，覆盖数据模型、JSON 序列化与合并/保存往返逻辑（无需 Maya 或 PySide6）：
+测试套件运行在 Maya 自带的 `mayapy.exe` 中，直接驱动真实内核（场景读写、引用、命令钩子）：
 
 ```bash
-python -m unittest discover -s tests
+"C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe" -m unittest discover -s tests
 ```
+
+覆盖范围与 headless 注意事项见 `tests/README.md`。
 
 ## 快速开始
 
@@ -44,7 +46,7 @@ python -m unittest discover -s tests
 或手动在 Maya Script Editor 中执行：
 
 ```python
-__file__ = r"PATH_TO\launch.py"; exec(compile(open(__file__).read(), __file__, "exec"))
+__file__ = r"PATH_TO\launch.py"; __name__ = "__main__"; exec(compile(open(__file__).read(), __file__, "exec"))
 ```
 
 > **注意**：如果从 GitHub 下载 ZIP，解压后的文件夹名为 `attr_manager-main`。请相应调整路径。
@@ -61,8 +63,7 @@ __file__ = r"PATH_TO\launch.py"; exec(compile(open(__file__).read(), __file__, "
 ```
 attributeManager_maya/
 ├── copy_to_clipboard.bat  # 自动生成启动命令
-├── launch.py              # 便携式启动器
-├── attributeManager.py    # 入口
+├── launch.py              # 唯一入口（热重载 + 启动）
 ├── __init__.py            # 包导出（launch/reload_modules）
 ├── core/
 │   ├── attr_data.py       # 数据模型 + JSON 序列化
@@ -70,8 +71,12 @@ attributeManager_maya/
 │   ├── scene_io.py        # 场景节点读写
 │   └── channel_box.py     # Channel Box 查询 + Last Lock Attr 钩子
 ├── tests/
-│   ├── test_attr_data.py      # 序列化往返测试
-│   └── test_merge_roundtrip.py # 合并/保存往返测试
+│   ├── support.py                   # 共享测试基座（场景隔离、引用夹具）
+│   ├── test_attr_data.py            # 序列化 + resolve_entries
+│   ├── test_merge.py                # 合并/保存行为矩阵
+│   ├── test_scene_io.py             # 持久化 / 锁 / 撤销足迹
+│   ├── test_channel_box.py          # setAttr 解析 + 命令钩子
+│   └── test_reference_integration.py # 引用生命周期端到端
 └── ui/
     ├── main_window.py     # Dockable 主窗口
     ├── group_section.py   # 分组 + 拖拽

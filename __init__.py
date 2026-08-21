@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import importlib
 
-from . import attributeManager as _attribute_manager
+from . import launch as _launch_module
 
 
 def reload_modules():
-    importlib.reload(_attribute_manager)
-    return _attribute_manager.reload_modules()
+    importlib.reload(_launch_module)
+    return _launch_module.reload_modules()
 
 
-def launch():
-    importlib.reload(_attribute_manager)
-    return _attribute_manager.launch()
+def launch(dockable=True):
+    importlib.reload(_launch_module)
+    return _launch_module.launch(dockable=dockable)
