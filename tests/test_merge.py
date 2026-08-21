@@ -1,40 +1,23 @@
-"""Round-trip tests for merge_for_display / collect_for_save (pure Python, no Maya).
+"""Behaviour matrix for core.merge: merge_for_display / collect_for_save.
 
-These cover the full override lifecycle the panel relies on:
-load (merge main + referenced configs) -> display -> edit (create override)
--> save (collect) -> reload -> display again. The display structure must
-survive the round trip: overrides stay in their referenced group's original
-position, keep their non-referenced identity, and never drift or vanish.
+Inputs are hand-built data (fast); the real load_config path that produces
+these structures end-to-end is covered in test_reference_integration.
 """
 
 from __future__ import annotations
 
-import os
-import sys
 import unittest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from core.attr_data import AttrEntry, AttrGroup, Config
+import support
+from core.attr_data import AttrGroup, Config
 from core.merge import collect_for_save, entry_key, merge_for_display
-
-
-def _entry(display_name, uuid, attr, **kw):
-    defaults = dict(
-        display_name=display_name,
-        node_path="|refNs:grp|" + display_name,
-        node_uuid=uuid,
-        attr=attr,
-    )
-    defaults.update(kw)
-    return AttrEntry(**defaults)
 
 
 def _main_config():
     group = AttrGroup(name="Main")
     group.entries = [
-        _entry("translateX", "uuid-A", "translateX"),
-        _entry("rotateZ", "uuid-C", "rotateZ"),
+        support.make_entry("translateX", "uuid-A", "translateX"),
+        support.make_entry("rotateZ", "uuid-C", "rotateZ"),
     ]
     return Config(groups=[group])
 
@@ -43,8 +26,8 @@ def _ref_config(namespace="refNs"):
     group = AttrGroup(name="Ref Group")
     group.reference_namespace = namespace
     group.entries = [
-        _entry("translateX", "uuid-A", "translateX", is_referenced=True),
-        _entry("translateY", "uuid-B", "translateY", is_referenced=True),
+        support.make_entry("translateX", "uuid-A", "translateX", is_referenced=True),
+        support.make_entry("translateY", "uuid-B", "translateY", is_referenced=True),
     ]
     return Config(groups=[group])
 
@@ -55,7 +38,6 @@ def _merged(main_config, ref_config):
 
 
 def _snapshot(config):
-    """Display state as comparable tuples (order normalised like the panel rebuild)."""
     config.normalise_orders()
     return [
         (g.name, g.reference_namespace,
@@ -81,7 +63,7 @@ class MergeDisplay(unittest.TestCase):
 
     def test_ref_entry_without_override_stays_readonly(self):
         main = Config(groups=[AttrGroup(name="Main")])
-        main.groups[0].entries = [_entry("rotateZ", "uuid-C", "rotateZ")]
+        main.groups[0].entries = [support.make_entry("rotateZ", "uuid-C", "rotateZ")]
         merged = _merged(main, _ref_config())
         merge_for_display(merged)
         self.assertEqual(
@@ -102,7 +84,7 @@ class MergeDisplay(unittest.TestCase):
 
     def test_main_group_fully_overridden_is_hidden(self):
         main = Config(groups=[AttrGroup(name="Main")])
-        main.groups[0].entries = [_entry("translateX", "uuid-A", "translateX")]
+        main.groups[0].entries = [support.make_entry("translateX", "uuid-A", "translateX")]
         merged = _merged(main, _ref_config())
         merge_for_display(merged)
         self.assertEqual([g.name for g in merged.groups], ["Ref Group"])
@@ -116,13 +98,11 @@ class MergeDisplay(unittest.TestCase):
     def test_duplicate_override_keys_first_wins_second_dropped(self):
         main = Config(groups=[AttrGroup(name="Main")])
         main.groups[0].entries = [
-            _entry("translateX", "uuid-A", "translateX"),
-            _entry("translateX dup", "uuid-A", "translateX"),
+            support.make_entry("translateX", "uuid-A", "translateX"),
+            support.make_entry("translateX dup", "uuid-A", "translateX"),
         ]
         merged = _merged(main, _ref_config())
         merge_for_display(merged)
-        # Current behaviour: the second same-key main entry is filtered out of
-        # the main group while only the first replaces the ref entry.
         self.assertEqual(
             _snapshot(merged),
             [
@@ -149,7 +129,7 @@ class CollectForSave(unittest.TestCase):
 
     def test_collect_without_overrides_emits_no_store_group(self):
         main = Config(groups=[AttrGroup(name="Main")])
-        main.groups[0].entries = [_entry("rotateZ", "uuid-C", "rotateZ")]
+        main.groups[0].entries = [support.make_entry("rotateZ", "uuid-C", "rotateZ")]
         merged = _merged(main, _ref_config())
         merge_for_display(merged)
         saved = collect_for_save(merged)
@@ -188,13 +168,10 @@ class OverrideRoundTrip(unittest.TestCase):
         display_before = _snapshot(merged)
 
         saved = collect_for_save(merged)
-        # Reload: the saved config becomes the new main config; the reference
-        # scene re-supplies fresh read-only entries (new objects, untouched).
         reloaded = _merged(saved, _ref_config())
         merge_for_display(reloaded)
 
         self.assertEqual(_snapshot(reloaded), display_before)
-        # The override is displayed in the ref group, not as a standalone store group.
         ref_group = reloaded.groups[-1]
         self.assertEqual(ref_group.reference_namespace, "refNs")
         self.assertEqual(ref_group.entries[0].is_referenced, False)
@@ -204,7 +181,6 @@ class OverrideRoundTrip(unittest.TestCase):
         merged = _merged(_main_config(), _ref_config())
         merge_for_display(merged)
 
-        # Simulate AttrManagerWindow.remove_override_entry.
         key = ("uuid-A", "translateX")
         for group in merged.groups:
             group.entries = [
@@ -233,7 +209,7 @@ class OverrideRoundTrip(unittest.TestCase):
         main = _main_config()
         ref = _ref_config()
         main.groups.append(AttrGroup(name="Second"))
-        main.groups[1].entries = [_entry("translateY", "uuid-B", "translateY")]
+        main.groups[1].entries = [support.make_entry("translateY", "uuid-B", "translateY")]
         merged = _merged(main, ref)
         merge_for_display(merged)
         display_before = _snapshot(merged)

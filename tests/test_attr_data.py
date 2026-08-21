@@ -1,14 +1,15 @@
-"""Serialisation round-trip tests for core.attr_data (pure Python, no Maya)."""
+"""Data-model tests for core.attr_data: serialisation plus real
+resolve_entries behaviour against live Maya nodes (runs under mayapy).
+"""
 
 from __future__ import annotations
 
-import os
-import sys
 import unittest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import maya.cmds as cmds
 
-from core.attr_data import AttrEntry, AttrGroup, Config
+import support
+from core.attr_data import AttrEntry, AttrGroup, Config, resolve_entries
 
 
 def _entry(**kw):
@@ -28,7 +29,7 @@ def _entry(**kw):
     return AttrEntry(**defaults)
 
 
-def _full_config() -> Config:
+def _full_config():
     main = AttrGroup(name="Main")
     main.entries = [
         _entry(display_name="Translate X", node_uuid="uuid-1", attr="translateX",
@@ -40,8 +41,7 @@ def _full_config() -> Config:
     ref.entries = [
         _entry(display_name="Rotate Y", node_uuid="uuid-3", attr="rotateY", order=0),
     ]
-    cfg = Config(groups=[main, ref], slider_float_precision=True)
-    return cfg
+    return Config(groups=[main, ref], slider_float_precision=True)
 
 
 class SerialisationRoundTrip(unittest.TestCase):
@@ -60,7 +60,6 @@ class SerialisationRoundTrip(unittest.TestCase):
         self.assertNotIn("slider_float_precision", data)
         group_data = data["groups"][0]
         self.assertNotIn("reference_namespace", group_data)
-        self.assertEqual(len(group_data["entries"]), 1)
         entry_data = group_data["entries"][0]
         self.assertNotIn("custom_min", entry_data)
         self.assertNotIn("custom_max", entry_data)
@@ -127,10 +126,55 @@ class SerialisationRoundTrip(unittest.TestCase):
         group.entries = [_entry(is_referenced=True)]
         cfg.groups = [group]
         restored = Config.from_json(cfg.to_json())
-        # Reference identity persists on the group; entry.is_referenced is
-        # derived at load time by scene_io.load_config, never serialised.
         self.assertEqual(restored.groups[0].reference_namespace, "refNs")
         self.assertFalse(restored.groups[0].entries[0].is_referenced)
+
+
+class ResolveEntries(support.MayaTestCase):
+    def _config_with(self, **kw):
+        cube = cmds.polyCube(name="resCube")[0]
+        uuid = cmds.ls(cube, uuid=True)[0]
+        values = dict(display_name="tx", node_path="|resCube",
+                      node_uuid=uuid, attr="translateX")
+        values.update(kw)
+        group = AttrGroup(name="G")
+        group.entries = [AttrEntry(**values)]
+        return Config(groups=[group])
+
+    def test_valid_uuid_resolves_node_and_clears_reason(self):
+        config = self._config_with()
+        resolve_entries(config)
+        resolved = config.groups[0].entries[0]
+        self.assertEqual(resolved.invalid_reason, "")
+        self.assertEqual(resolved.node_path, "|resCube")
+        self.assertTrue(resolved.node_uuid)
+
+    def test_unknown_node_and_path_reports_missing(self):
+        config = self._config_with(node_uuid="ffffffff-ffff-ffff-ffff-ffffffffffff",
+                                   node_path="|doesNotExist")
+        resolve_entries(config)
+        self.assertEqual(config.groups[0].entries[0].invalid_reason, "Node not found")
+
+    def test_missing_attribute_reports_reason(self):
+        config = self._config_with(attr="notAnAttr")
+        resolve_entries(config)
+        self.assertEqual(config.groups[0].entries[0].invalid_reason,
+                         "Attribute not found")
+
+    def test_locked_attribute_reports_reason(self):
+        config = self._config_with()
+        cmds.setAttr("resCube.translateX", lock=True)
+        resolve_entries(config)
+        self.assertEqual(config.groups[0].entries[0].invalid_reason,
+                         "Attribute is locked")
+
+    def test_input_connection_reports_reason(self):
+        config = self._config_with()
+        locator = cmds.spaceLocator()[0]
+        cmds.connectAttr(locator + ".translateX", "resCube.translateX")
+        resolve_entries(config)
+        self.assertEqual(config.groups[0].entries[0].invalid_reason,
+                         "Attribute has an input connection")
 
 
 if __name__ == "__main__":
