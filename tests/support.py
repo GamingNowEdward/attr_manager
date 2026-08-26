@@ -21,10 +21,9 @@ try:
     import maya.standalone
 
     maya.standalone.initialize(name="python")
-except RuntimeError:
-    pass
-
-import maya.cmds as cmds  # noqa: E402
+    import maya.cmds as cmds  # noqa: E402
+except Exception:
+    cmds = None
 
 from core.attr_data import AttrEntry, AttrGroup, Config  # noqa: E402
 

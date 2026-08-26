@@ -74,9 +74,9 @@ def collect_for_save(config: Config) -> Config:
     main_groups = []
     for group in config.groups:
         if group.reference_namespace is None:
-            main_groups.append(group)
+            main_groups.append(copy.deepcopy(group))
         else:
-            overrides = [e for e in group.entries if not e.is_referenced]
+            overrides = [copy.deepcopy(e) for e in group.entries if not e.is_referenced]
             if overrides:
                 main_groups.append(AttrGroup(
                     name=group.name,
