@@ -15,7 +15,7 @@ try:
                                    QHBoxLayout, QLabel, QLineEdit, QMenu, QMessageBox,
                                    QPushButton, QSlider, QSpinBox, QVBoxLayout, QWidget)
     from shiboken6 import isValid
-except ImportError:  # Maya 2024 normally uses PySide6; retain older compatibility.
+    except ImportError:  # Maya 2024.2 bundles PySide2; fall back to it when PySide6 is unavailable.
     from PySide2.QtCore import Qt, Signal, QMimeData, QTimer
     from PySide2.QtGui import QDrag
     from PySide2.QtWidgets import (QApplication, QAction, QCheckBox, QComboBox, QDialog,
