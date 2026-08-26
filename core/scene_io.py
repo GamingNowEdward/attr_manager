@@ -7,6 +7,7 @@ from typing import Optional
 import maya.cmds as cmds
 
 from .attr_data import AttrGroup, Config, resolve_entries
+from .merge import merge_configs
 
 NODE_NAME = "attrManager"
 ATTR_NAME = "config"
@@ -20,6 +21,20 @@ def _config_nodes():
     all_network = cmds.ls(type="network", long=True) or []
     return [n for n in all_network
             if NODE_NAME in _short_name(n) and not _referenced(n)]
+
+
+def _main_config_nodes():
+    """Candidate main-config nodes in deterministic order.
+
+    The exact short name ``attrManager`` always ranks first (it is the
+    canonical main node); any leftovers (import/duplicate ``attrManagerN``
+    nodes) follow by name. load and save both select from this single list,
+    so they can never disagree about which node is the main config.
+    """
+    nodes = _config_nodes()
+    if len(nodes) <= 1:
+        return nodes
+    return sorted(nodes, key=lambda n: (_short_name(n) != NODE_NAME, _short_name(n)))
 
 
 def _config_nodes_all():
@@ -49,7 +64,7 @@ def _any_node():
 
 
 def get_or_create_node() -> str:
-    nodes = _config_nodes()
+    nodes = _main_config_nodes()
     if nodes:
         node = nodes[0]
     elif _any_node():
@@ -90,6 +105,37 @@ def _referenced(node: str) -> bool:
         return False
 
 
+def _converge_extra_nodes(primary_node: str, config: Config) -> Config:
+    """Collapse extra main-config nodes into ``primary_node``.
+
+    Import/duplicate leftovers are removed inside save_config's
+    undo-suppressed region: empty ones are deleted outright, non-empty ones
+    are merged into ``config`` first (via core.merge.merge_configs). Never
+    throws — a failing node is left alone with a warning, so data is never
+    lost.
+    """
+    result = config
+    for node in _main_config_nodes():
+        if node == primary_node:
+            continue
+        try:
+            extra_config = _load_from_node(node)
+            if extra_config.groups:
+                result = merge_configs(result, extra_config)
+                cmds.warning(
+                    "Attribute Manager: merged config from extra node {} "
+                    "into {}".format(node, primary_node)
+                )
+            cmds.lockNode(node, lock=False)
+            cmds.delete(node)
+        except Exception as exc:
+            cmds.warning(
+                "Attribute Manager: could not remove extra config node "
+                "{}: {}".format(node, exc)
+            )
+    return result
+
+
 def save_config(config: Config) -> bool:
     """Persist config without adding bookkeeping changes to the undo queue."""
     filtered_groups = []
@@ -126,7 +172,7 @@ def save_config(config: Config) -> bool:
             cmds.lockNode(node, lock=False)
         if was_locked:
             cmds.setAttr(plug, lock=False)
-        cmds.setAttr(plug, filtered_config.to_json(), type="string")
+        cmds.setAttr(plug, _converge_extra_nodes(node, filtered_config).to_json(), type="string")
         return True
     except Exception as exc:
         cmds.warning("Attribute Manager: could not save configuration: {}".format(exc))
@@ -147,22 +193,27 @@ def load_config() -> Config:
     if not all_nodes:
         return Config()
 
+    main_nodes = _main_config_nodes()
     main_config = Config()
+    if main_nodes:
+        main_config = _load_from_node(main_nodes[0])
+        for node in main_nodes[1:]:
+            cmds.warning(
+                "Attribute Manager: multiple main config nodes found; "
+                "using {} and ignoring {}".format(main_nodes[0], node)
+            )
+
     ref_configs = []
-
     for node in all_nodes:
+        if not _referenced(node):
+            continue
         node_config = _load_from_node(node)
-        is_ref = _referenced(node)
-
-        if is_ref:
-            namespace = _get_namespace(node)
-            for group in node_config.groups:
-                group.reference_namespace = namespace
-                for entry in group.entries:
-                    entry.is_referenced = True
-            ref_configs.append(node_config)
-        else:
-            main_config = node_config
+        namespace = _get_namespace(node)
+        for group in node_config.groups:
+            group.reference_namespace = namespace
+            for entry in group.entries:
+                entry.is_referenced = True
+        ref_configs.append(node_config)
 
     for ref_config in ref_configs:
         main_config.groups.extend(ref_config.groups)

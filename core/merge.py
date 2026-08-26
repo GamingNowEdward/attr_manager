@@ -12,6 +12,8 @@ only, so they are unit-testable outside Maya.
 
 from __future__ import annotations
 
+import copy
+
 from .attr_data import AttrEntry, AttrGroup, Config
 
 
@@ -90,3 +92,28 @@ def collect_for_save(config: Config) -> Config:
     )
     main_config.normalise_orders()
     return main_config
+
+
+def merge_configs(base: Config, extra: Config) -> Config:
+    """Merge ``extra`` into ``base`` for main-config-node convergence.
+
+    Same-named groups keep ``base``'s collapsed state and gain ``extra``'s
+    entries (deduped by :func:`entry_key`); differently-named groups are
+    appended whole. Returns a new ``Config`` and never mutates either input.
+    """
+    merged = copy.deepcopy(base)
+    by_name = {group.name: group for group in merged.groups}
+    for group in extra.groups:
+        target = by_name.get(group.name)
+        if target is None:
+            merged.groups.append(copy.deepcopy(group))
+            by_name[group.name] = merged.groups[-1]
+            continue
+        existing = {entry_key(entry) for entry in target.entries}
+        for entry in group.entries:
+            key = entry_key(entry)
+            if key not in existing:
+                target.entries.append(copy.deepcopy(entry))
+                existing.add(key)
+    merged.normalise_orders()
+    return merged

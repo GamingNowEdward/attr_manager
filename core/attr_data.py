@@ -53,7 +53,7 @@ class AttrEntry:
             custom_min=value.get("custom_min"),
             custom_max=value.get("custom_max"),
             display_type=str(value.get("display_type", "auto")),
-            is_referenced=bool(value.get("is_referenced", False)),
+            is_referenced=False,
         )
 
 

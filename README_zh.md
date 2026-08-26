@@ -67,7 +67,7 @@ attributeManager_maya/
 ├── __init__.py            # 包导出（launch/reload_modules）
 ├── core/
 │   ├── attr_data.py       # 数据模型 + JSON 序列化
-│   ├── merge.py           # 显示/保存合并变换（纯 Python）
+│   ├── merge.py           # 显示/保存/节点收敛合并变换（纯 Python）
 │   ├── scene_io.py        # 场景节点读写
 │   └── channel_box.py     # Channel Box 查询 + Last Lock Attr 钩子
 ├── tests/

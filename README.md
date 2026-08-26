@@ -67,7 +67,7 @@ attributeManager_maya/
 ├── __init__.py            # Package re-exports (launch/reload_modules)
 ├── core/
 │   ├── attr_data.py       # Data model + JSON serialisation
-│   ├── merge.py           # Display/persist merge transforms (pure Python)
+│   ├── merge.py           # Display/persist/convergence merge transforms (pure Python)
 │   ├── scene_io.py        # Scene node read/write
 │   └── channel_box.py     # Channel Box queries + Last Lock Attr hook
 ├── tests/

@@ -129,6 +129,25 @@ class SerialisationRoundTrip(unittest.TestCase):
         self.assertEqual(restored.groups[0].reference_namespace, "refNs")
         self.assertFalse(restored.groups[0].entries[0].is_referenced)
 
+    def test_from_dict_ignores_injected_is_referenced(self):
+        raw = {
+            "groups": [{
+                "name": "G",
+                "entries": [{
+                    "display_name": "Tx", "node": "|pCube1", "attr": "translateX",
+                    "is_referenced": True,
+                }],
+            }],
+        }
+        entry = Config.from_dict(raw).groups[0].entries[0]
+        self.assertFalse(entry.is_referenced)
+
+    def test_to_dict_never_contains_is_referenced(self):
+        group = AttrGroup(name="Ref", reference_namespace="refNs")
+        group.entries = [_entry(is_referenced=True)]
+        data = group.to_dict()
+        self.assertNotIn("is_referenced", data["entries"][0])
+
 
 class ResolveEntries(support.MayaTestCase):
     def _config_with(self, **kw):

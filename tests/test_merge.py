@@ -10,7 +10,7 @@ import unittest
 
 import support
 from core.attr_data import AttrGroup, Config
-from core.merge import collect_for_save, entry_key, merge_for_display
+from core.merge import collect_for_save, entry_key, merge_configs, merge_for_display
 
 
 def _main_config():
@@ -218,6 +218,65 @@ class OverrideRoundTrip(unittest.TestCase):
         reloaded = _merged(saved, _ref_config())
         merge_for_display(reloaded)
         self.assertEqual(_snapshot(reloaded), display_before)
+
+
+class MergeConfigs(unittest.TestCase):
+    def _config(self, group_name="Main", entries=()):
+        group = AttrGroup(name=group_name, collapsed=True)
+        group.entries = list(entries)
+        return Config(groups=[group])
+
+    def test_differently_named_groups_are_appended_whole(self):
+        base = self._config()
+        extra = self._config("Extra", [
+            support.make_entry("tx", "uuid-X", "translateX"),
+        ])
+        merged = merge_configs(base, extra)
+        self.assertEqual([g.name for g in merged.groups], ["Main", "Extra"])
+        self.assertEqual([e.attr for e in merged.groups[1].entries], ["translateX"])
+
+    def test_same_name_group_merges_entries_with_dedup(self):
+        base = self._config(entries=[
+            support.make_entry("tx", "uuid-A", "translateX"),
+        ])
+        extra = self._config(entries=[
+            support.make_entry("tx dup", "uuid-A", "translateX"),
+            support.make_entry("ty", "uuid-B", "translateY"),
+        ])
+        merged = merge_configs(base, extra)
+        self.assertEqual([g.name for g in merged.groups], ["Main"])
+        self.assertEqual(
+            [e.attr for e in merged.groups[0].entries], ["translateX", "translateY"])
+
+    def test_base_collapsed_state_wins(self):
+        base = self._config(entries=[
+            support.make_entry("tx", "uuid-A", "translateX"),
+        ])
+        extra = Config(groups=[AttrGroup(name="Main", collapsed=False, entries=[
+            support.make_entry("ty", "uuid-B", "translateY"),
+        ])])
+        merged = merge_configs(base, extra)
+        self.assertTrue(merged.groups[0].collapsed)
+
+    def test_inputs_are_not_mutated(self):
+        base = self._config(entries=[
+            support.make_entry("tx", "uuid-A", "translateX"),
+        ])
+        extra = self._config("Extra", [
+            support.make_entry("rz", "uuid-Z", "rotateZ"),
+        ])
+        base_before = _snapshot(base)
+        extra_before = _snapshot(extra)
+        merge_configs(base, extra)
+        self.assertEqual(_snapshot(base), base_before)
+        self.assertEqual(_snapshot(extra), extra_before)
+
+    def test_orders_are_normalised_after_merge(self):
+        base = Config(groups=[AttrGroup(name="B", order=5)])
+        extra = Config(groups=[AttrGroup(name="A", order=1)])
+        merged = merge_configs(base, extra)
+        self.assertEqual([g.name for g in merged.groups], ["A", "B"])
+        self.assertEqual([g.order for g in merged.groups], [0, 1])
 
 
 if __name__ == "__main__":
