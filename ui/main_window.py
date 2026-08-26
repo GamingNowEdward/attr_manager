@@ -697,14 +697,66 @@ def _dock_fresh(window, workspace):
     m_utils.executeDeferred(_purge_stray_workspace_widgets, lowPriority=False)
 
 
+def _retry_restore(workspace, attempts):
+    def _guard(*args, **kwargs):
+        _try_restore_attach(workspace, attempts)
+    m_utils.executeDeferred(_guard, lowPriority=True)
+
+
+def _try_restore_attach(workspace, attempts=40):
+    """Session-restore path: wait for Maya's restored container, then attach.
+
+    NEVER creates a window or container here — only the fresh path does, so
+    a slow Maya layout restore (uiScript firing before the container is
+    registered, mid-splash) cannot pop a floating panel over the splash
+    screen. A container that never appears (abnormal restore) or is not
+    visible (user closed the panel last session) is left alone, with a
+    warning telling the user to run launch() manually.
+    """
+    global _window
+    if _window is not None and isValid(_window):
+        return True
+    try:
+        exists = cmds.workspaceControl(workspace, exists=True)
+    except Exception:
+        exists = False
+    if not exists:
+        if attempts <= 0:
+            cmds.warning(
+                "Attribute Manager: restored panel container was never "
+                "created; run launch() manually.")
+            return False
+        _retry_restore(workspace, attempts - 1)
+        return False
+    try:
+        if not cmds.workspaceControl(workspace, query=True, visible=True):
+            return False
+    except Exception:
+        pass
+    window = _create_window()
+    if _attach_to_restored_control(window, workspace):
+        _finalize(window, workspace)
+        _window = window
+        return True
+    if attempts <= 0:
+        cmds.warning(
+            "Attribute Manager: could not attach into the restored panel "
+            "container; run launch() manually.")
+        return False
+    _retry_restore(workspace, attempts - 1)
+    return False
+
+
 def launch(dockable=True, restore=False):
     """Build and dock the panel.
 
     ``restore=True`` is used ONLY by the session-restore path
     (``_restore_from_ui_script`` → ``_restore_guard``): Maya has already
     recreated the workspace control at its saved position (tab groups
-    included), so the fresh container is reused and the saved tab placement
-    is preserved. Every other call goes through the fresh path below.
+    included). The restore path never creates a window or container of its
+    own — it waits for Maya's container to appear, then attaches into it,
+    preserving the saved tab placement. Every other call goes through the
+    fresh path below.
     """
     global _window
     _kill_stale_jobs()
@@ -715,17 +767,10 @@ def launch(dockable=True, restore=False):
     m_utils.executeDeferred(_delete_legacy_workspace, lowPriority=False)
     _close_old_windows()
 
-    # Session restore: reuse the container Maya just rebuilt. Its container is
-    # fresh for this session (no accumulated Qt state), so this does not touch
-    # the "never reuse" crash path below, which applies to mid-session
-    # retained/restored containers.
-    if restore and cmds.workspaceControl(workspace, exists=True):
-        window = _create_window()
-        if _attach_to_restored_control(window, workspace):
-            _finalize(window, workspace)
-            _window = window
-            return window
-        _delete_workspace_control(workspace)
+    # Session restore: wait for the restored container and attach into it.
+    if restore:
+        _try_restore_attach(workspace)
+        return _window
 
     # Fresh path: never reuse an existing workspace control — re-attaching a
     # fresh window into a retained/restored container leaves Maya's layout
