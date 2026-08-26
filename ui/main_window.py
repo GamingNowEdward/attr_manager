@@ -13,14 +13,14 @@ try:
     from PySide6.QtWidgets import (QApplication, QHBoxLayout, QInputDialog,
                                    QMessageBox, QPushButton,
                                    QScrollArea, QVBoxLayout, QWidget)
-    from shiboken6 import isValid, wrapInstance
+    from shiboken6 import isValid, wrapInstance, getCppPointer
 except ImportError:
     from PySide2.QtCore import Qt, QTimer
     from PySide2.QtGui import QPainter, QPen, QColor
     from PySide2.QtWidgets import (QApplication, QHBoxLayout, QInputDialog,
                                    QMessageBox, QPushButton,
                                    QScrollArea, QVBoxLayout, QWidget)
-    from shiboken2 import isValid, wrapInstance
+    from shiboken2 import isValid, wrapInstance, getCppPointer
 
 from core.attr_data import AttrGroup, Config
 from core.channel_box import enable_command_hook, disable_command_hook, unlock_attr
@@ -579,7 +579,35 @@ def _set_ui_script(workspace):
         pass
 
 
+def _maya_main_window_ready():
+    """Return True once Maya's main window is visible.
+
+    During a normal session restore the workspace control uiScript fires
+    while the splash screen is still up.  Running launch() at that point
+    (even just the restore path, which queries/deletes UI and creates the
+    Qt panel) makes Maya dismiss the splash screen early.  Defer until the
+    main window is actually visible so the splash closes normally.
+    """
+    try:
+        main_ptr = omui.MQtUtil.mainWindow()
+        if main_ptr is None:
+            return False
+        main_window = wrapInstance(int(main_ptr), QWidget)
+        return main_window.isVisible()
+    except Exception:
+        return False
+
+
 def _restore_guard(*args, **kwargs):
+    global _window
+    if _window is not None and isValid(_window):
+        return
+    if not _maya_main_window_ready():
+        try:
+            m_utils.executeDeferred(_restore_guard, lowPriority=True)
+        except Exception:
+            pass
+        return
     try:
         launch(dockable=True, restore=True)
     except Exception as exc:
@@ -677,7 +705,7 @@ def _attach_to_restored_control(window, workspace):
     if container is None:
         return False
     try:
-        omui.MQtUtil.addWidgetToMayaLayout(int(window), int(container))
+        omui.MQtUtil.addWidgetToMayaLayout(getCppPointer(window)[0], int(container))
         window.show()
         return True
     except Exception:
@@ -691,7 +719,7 @@ def _finalize(window, workspace):
 
 def _dock_fresh(window, workspace):
     window.show(dockable=True, floating=True)
-    window.show(dockable=True, area="right", floating=False)
+    cmds.workspaceControl(workspace, edit=True, dockToMainWindow=("right", False))
     _finalize(window, workspace)
     _ensure_panel_width(window, workspace)
     m_utils.executeDeferred(_purge_stray_workspace_widgets, lowPriority=False)
@@ -735,9 +763,13 @@ def _try_restore_attach(workspace, attempts=40):
         pass
     window = _create_window()
     if _attach_to_restored_control(window, workspace):
-        _finalize(window, workspace)
         _window = window
+        _finalize(window, workspace)
         return True
+    try:
+        window.close()
+    except Exception:
+        pass
     if attempts <= 0:
         cmds.warning(
             "Attribute Manager: could not attach into the restored panel "
