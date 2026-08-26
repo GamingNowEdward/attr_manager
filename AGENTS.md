@@ -1,7 +1,7 @@
 # Attribute Manager — Agent Guide
 
 ## What This Is
-A dockable Maya 2024.2 panel (Python 3 + PySide6) that aggregates scene attributes into grouped, draggable, editable rows. Tested on Maya 2024.2 only — other Maya versions are untested. Config persists inside the scene file on a locked `network` node named `attrManager`. Referenced scenes' configs are displayed read-only, with per-scene overrides supported in place.
+A dockable Maya 2024.2 panel (Python 3; PySide6 or PySide2 — the UI falls back to PySide2 on Maya 2024.2) that aggregates scene attributes into grouped, draggable, editable rows. Tested on Maya 2024.2 only — other Maya versions are untested. Config persists inside the scene file on a locked `network` node named `attrManager`. Referenced scenes' configs are displayed read-only, with per-scene overrides supported in place.
 
 ## Running
 No build step. In Maya Script Editor:
@@ -13,7 +13,7 @@ __file__ = r"C:\opencode\attributeManager_maya\launch.py"; __name__ = "__main__"
 ## Testing
 The suite has two halves. The Maya-free half (`tests/test_attr_data_pure.py`, `tests/test_merge_pure.py`) runs under any system Python with `pytest`. The Maya-dependent half (`tests/mayapy/`, driving the live kernel via `tests/support.py` which initialises `maya.standalone`) runs only under Maya's `mayapy.exe`. From the project root:
 ```bash
-"C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe" -m unittest discover -s tests -v
+"C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe" -m unittest discover -s tests/mayapy -t tests -v
 ```
 Covers core/ end-to-end: scene_io persistence/locks/undo footprint, main-config node convergence, reference lifecycle via real `file -reference` operations, command-hook firing, merge matrix, resolve_entries. Coverage table and headless gotchas (refNode-vs-file-path, fixture ordering, load_config auto-resolve): see `tests/README.md`. UI-layer behaviour (dock/workspace, undo from Qt callbacks) is NOT covered — manual testing required. The pure half is driven by GitHub Actions (Python 3.13, aligned with Maya 2027); the mayapy half is run locally (not in CI).
 

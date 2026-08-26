@@ -2,6 +2,8 @@
 
 A dockable attribute collection panel for Maya 2024.2. Aggregates frequently used scene attributes into one panel with grouped management, drag-and-drop reordering, and per-scene persistence.
 
+> 中文文档见 [README_zh.md](README_zh.md)。
+
 ## Features
 
 - Add attributes from Channel Box or manual plug input (auto-searches Shape nodes)
@@ -27,11 +29,19 @@ A dockable attribute collection panel for Maya 2024.2. Aggregates frequently use
 
 ## Testing
 
-The suite runs under Maya's `mayapy.exe` and drives the live kernel (scene I/O, references, command hooks):
+The suite is split into two halves:
 
-```bash
-"C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe" -m unittest discover -s tests
-```
+- **Pure-Python (no Maya)** — `tests/test_attr_data_pure.py` and `tests/test_merge_pure.py`, run with `pytest` under any system Python. CI runs this automatically (GitHub Actions, Python 3.13, aligned with Maya 2027).
+
+  ```bash
+  python -m pytest -v
+  ```
+
+- **mayapy (Maya required)** — drives the live kernel (scene I/O, references, command hooks). Run locally with Maya's `mayapy.exe`:
+
+  ```bash
+  mayapy -m unittest discover -s tests/mayapy -t tests -v
+  ```
 
 Coverage table and headless gotchas: see `tests/README.md`.
 
@@ -55,7 +65,7 @@ The panel docks to Maya's right side. Each call hot-reloads all modules for deve
 
 ## Requirements
 
-- Maya 2024.2 (Python 3 + PySide6)
+- Maya 2024.2 (Python 3; UI layer supports PySide6 or PySide2 — it falls back to PySide2 automatically)
 - **Tested on Maya 2024.2 only. Other Maya versions are not tested — please test them yourself.**
 
 ## Project Structure
@@ -71,12 +81,17 @@ attributeManager_maya/
 │   ├── scene_io.py        # Scene node read/write
 │   └── channel_box.py     # Channel Box queries + Last Lock Attr hook
 ├── tests/
-│   ├── support.py                   # Shared harness (scene isolation, fixtures)
-│   ├── test_attr_data.py            # Serialisation + resolve_entries
-│   ├── test_merge.py                # Merge/collect behaviour matrix
-│   ├── test_scene_io.py             # Persistence / locks / undo footprint
-│   ├── test_channel_box.py          # setAttr parsing + command hook
-│   └── test_reference_integration.py # Reference lifecycle end-to-end
+│   ├── pytest.ini                     # testpaths=tests, ignores tests/mayapy
+│   ├── conftest.py                   # pytest bootstrap (sys.path)
+│   ├── _fixtures.py                  # pure-Python data factories (no Maya)
+│   ├── test_attr_data_pure.py        # core.attr_data: data model + serialisation
+│   ├── test_merge_pure.py            # core.merge: merge_for_display / collect_for_save / merge_configs
+│   ├── support.py                    # shared mayapy harness (import-safe)
+│   └── mayapy/                       # MAYA-DEPENDENT tests (local only, not in CI)
+│       ├── test_attr_data.py         # Serialisation + resolve_entries (real nodes)
+│       ├── test_scene_io.py          # Persistence / locks / undo footprint
+│       ├── test_channel_box.py       # setAttr parsing + command hook
+│       └── test_reference_integration.py # Reference lifecycle end-to-end
 └── ui/
     ├── main_window.py     # Dockable main window
     ├── group_section.py   # Groups + drag-drop

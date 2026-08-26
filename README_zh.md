@@ -2,6 +2,8 @@
 
 Maya 2024.2 属性集合面板工具。将场景中常用属性聚合到一个可停靠面板，支持快速调节、分组管理、拖拽排序，配置随场景保存。
 
+> 英文文档见 [README.md](README.md)。
+
 ## 功能
 
 - 从 Channel Box 或手动输入添加属性（自动搜索 Shape 节点）
@@ -27,11 +29,19 @@ Maya 2024.2 属性集合面板工具。将场景中常用属性聚合到一个�
 
 ## 测试
 
-测试套件运行在 Maya 自带的 `mayapy.exe` 中，直接驱动真实内核（场景读写、引用、命令钩子）：
+测试套件分为两半：
 
-```bash
-"C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe" -m unittest discover -s tests
-```
+- **纯 Python 版（无需 Maya）** —— `tests/test_attr_data_pure.py` 和 `tests/test_merge_pure.py`，用任意系统 Python 配合 `pytest` 运行。CI 会自动执行这部分（GitHub Actions，Python 3.13，与 Maya 2027 对齐）。
+
+  ```bash
+  python -m pytest -v
+  ```
+
+- **mayapy 版（需要 Maya）** —— 直接驱动真实内核（场景读写、引用、命令钩子）。在本地用 Maya 自带的 `mayapy.exe` 运行：
+
+  ```bash
+  mayapy -m unittest discover -s tests/mayapy -t tests -v
+  ```
 
 覆盖范围与 headless 注意事项见 `tests/README.md`。
 
@@ -55,7 +65,7 @@ __file__ = r"PATH_TO\launch.py"; __name__ = "__main__"; exec(compile(open(__file
 
 ## 环境要求
 
-- Maya 2024.2（Python 3 + PySide6）
+- Maya 2024.2（Python 3；UI 层支持 PySide6 或 PySide2，会自动兜底到 PySide2）
 - **仅在 Maya 2024.2 上测试过，其他 Maya 版本未经测试，请自行测试**
 
 ## 项目结构
@@ -71,12 +81,17 @@ attributeManager_maya/
 │   ├── scene_io.py        # 场景节点读写
 │   └── channel_box.py     # Channel Box 查询 + Last Lock Attr 钩子
 ├── tests/
-│   ├── support.py                   # 共享测试基座（场景隔离、引用夹具）
-│   ├── test_attr_data.py            # 序列化 + resolve_entries
-│   ├── test_merge.py                # 合并/保存行为矩阵
-│   ├── test_scene_io.py             # 持久化 / 锁 / 撤销足迹
-│   ├── test_channel_box.py          # setAttr 解析 + 命令钩子
-│   └── test_reference_integration.py # 引用生命周期端到端
+│   ├── pytest.ini                     # testpaths=tests，忽略 tests/mayapy
+│   ├── conftest.py                   # pytest 引导（sys.path）
+│   ├── _fixtures.py                  # 纯 Python 数据工厂（无 Maya）
+│   ├── test_attr_data_pure.py        # core.attr_data：数据模型 + 序列化
+│   ├── test_merge_pure.py            # core.merge：merge_for_display / collect_for_save / merge_configs
+│   ├── support.py                    # 共享 mayapy 测试基座（可安全导入）
+│   └── mayapy/                       # 依赖 Maya 的测试（仅本地执行，不进入 CI）
+│       ├── test_attr_data.py         # 序列化 + resolve_entries（真实节点）
+│       ├── test_scene_io.py          # 持久化 / 锁 / 撤销足迹
+│       ├── test_channel_box.py       # setAttr 解析 + 命令钩子
+│       └── test_reference_integration.py # 引用生命周期端到端
 └── ui/
     ├── main_window.py     # Dockable 主窗口
     ├── group_section.py   # 分组 + 拖拽
