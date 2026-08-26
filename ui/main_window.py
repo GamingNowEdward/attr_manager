@@ -581,7 +581,7 @@ def _set_ui_script(workspace):
 
 def _restore_guard(*args, **kwargs):
     try:
-        launch(dockable=True)
+        launch(dockable=True, restore=True)
     except Exception as exc:
         cmds.warning("Attribute Manager: session restore failed: {}".format(exc))
 
@@ -637,14 +637,7 @@ def _ensure_panel_width(window, workspace):
         pass
 
 
-def launch(dockable=True):
-    global _window
-    _kill_stale_jobs()
-    workspace = WINDOW_OBJECT_NAME + "WorkspaceControl"
-    # Delete the legacy control immediately AND after Maya finishes restoring
-    # the floating-window list (which can recreate it after this function runs).
-    _delete_legacy_workspace()
-    m_utils.executeDeferred(_delete_legacy_workspace, lowPriority=False)
+def _close_old_windows():
     for widget in QApplication.allWidgets():
         if not isValid(widget):
             continue
@@ -658,29 +651,91 @@ def launch(dockable=True):
             widget.close()
             widget.deleteLater()
 
-    # Never reuse an existing workspace control: re-attaching a fresh window
-    # into a retained/restored container leaves Maya's layout unstable —
-    # tearing the panel out of a tab group and re-docking it accumulates
-    # Qt-internal corruption (QStackedLayout::takeAt / QWindow::screen crashes,
-    # verified in Maya 2024). Delete the old control entirely and rebuild fresh.
-    if cmds.workspaceControl(workspace, exists=True):
-        try:
-            cmds.workspaceControl(workspace, edit=True, close=True)
-        except Exception:
-            pass
-        try:
-            cmds.deleteUI(workspace, control=True)
-        except Exception:
-            pass
 
-    _window = AttrManagerWindow()
+def _delete_workspace_control(workspace):
+    try:
+        cmds.workspaceControl(workspace, edit=True, close=True)
+    except Exception:
+        pass
+    try:
+        cmds.deleteUI(workspace, control=True)
+    except Exception:
+        pass
+
+
+def _create_window():
+    return AttrManagerWindow()
+
+
+def _attach_to_restored_control(window, workspace):
+    """Attach ``window`` into a workspace control Maya already restored.
+
+    Returns False (without touching anything) if the container is gone or
+    the attach fails, so the caller can fall back to the fresh-dock path.
+    """
+    container = omui.MQtUtil.findControl(workspace)
+    if container is None:
+        return False
+    try:
+        omui.MQtUtil.addWidgetToMayaLayout(int(window), int(container))
+        window.show()
+        return True
+    except Exception:
+        return False
+
+
+def _finalize(window, workspace):
+    _set_ui_script(workspace)
+    _set_panel_visibility_callback(workspace)
+
+
+def _dock_fresh(window, workspace):
+    window.show(dockable=True, floating=True)
+    window.show(dockable=True, area="right", floating=False)
+    _finalize(window, workspace)
+    _ensure_panel_width(window, workspace)
+    m_utils.executeDeferred(_purge_stray_workspace_widgets, lowPriority=False)
+
+
+def launch(dockable=True, restore=False):
+    """Build and dock the panel.
+
+    ``restore=True`` is used ONLY by the session-restore path
+    (``_restore_from_ui_script`` → ``_restore_guard``): Maya has already
+    recreated the workspace control at its saved position (tab groups
+    included), so the fresh container is reused and the saved tab placement
+    is preserved. Every other call goes through the fresh path below.
+    """
+    global _window
+    _kill_stale_jobs()
+    workspace = WINDOW_OBJECT_NAME + "WorkspaceControl"
+    # Delete the legacy control immediately AND after Maya finishes restoring
+    # the floating-window list (which can recreate it after this function runs).
+    _delete_legacy_workspace()
+    m_utils.executeDeferred(_delete_legacy_workspace, lowPriority=False)
+    _close_old_windows()
+
+    # Session restore: reuse the container Maya just rebuilt. Its container is
+    # fresh for this session (no accumulated Qt state), so this does not touch
+    # the "never reuse" crash path below, which applies to mid-session
+    # retained/restored containers.
+    if restore and cmds.workspaceControl(workspace, exists=True):
+        window = _create_window()
+        if _attach_to_restored_control(window, workspace):
+            _finalize(window, workspace)
+            _window = window
+            return window
+        _delete_workspace_control(workspace)
+
+    # Fresh path: never reuse an existing workspace control — re-attaching a
+    # fresh window into a retained/restored container leaves Maya's layout
+    # unstable (tear-out/re-dock/tab-switch of the panel then accumulates
+    # Qt-internal corruption — QStackedLayout::takeAt / QWindow::screen crashes,
+    # verified in Maya 2024). Delete the old control entirely and rebuild fresh.
+    _delete_workspace_control(workspace)
+    _window = _create_window()
     if dockable:
-        _window.show(dockable=True, floating=True)
-        _window.show(dockable=True, area="right", floating=False)
-        _set_ui_script(workspace)
-        _set_panel_visibility_callback(workspace)
-        _ensure_panel_width(_window, workspace)
-        m_utils.executeDeferred(_purge_stray_workspace_widgets, lowPriority=False)
+        _dock_fresh(_window, workspace)
     else:
         _window.show()
     return _window

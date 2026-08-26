@@ -30,9 +30,10 @@ commandPort warnings) is harmless.
 | `test_channel_box.py` | `_parse_set_attr_line` matrix; real hook firing (MEL yes, Python cmds no); `_hook_enabled` gating; `unlock_attr` |
 | `test_reference_integration.py` | End-to-end: `file -reference` tagging, override survives scene reopen in original position, unload/remove drops ref data, namespace rename picked up on reload, dual references independently tagged |
 
-Not covered (GUI-only, manual testing required): dock/workspace behaviour,
-undo from Qt callbacks inside the running panel, drag-and-drop, focus
-handling — see AGENTS.md.
+Not covered (GUI-only, manual testing required): dock/workspace behaviour
+(incl. session-restore tab placement via `launch(restore=True)`), undo from
+Qt callbacks inside the running panel, drag-and-drop, focus handling — see
+AGENTS.md.
 
 ## Headless notes & gotchas learned here
 
